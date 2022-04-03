@@ -16,6 +16,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"r00t2.io/gokwallet"
@@ -24,7 +25,7 @@ import (
 // Gets a secret value from kwallet
 func getSecretFromKWallet(what string) (string, error) {
 	if os.Getenv("USE_LIBSECRET") != "" {
-		return "", nil
+		return "", fmt.Errorf("Skipping kwallet")
 	}
 
 	var (

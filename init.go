@@ -34,6 +34,7 @@ func getSecret(what string) string {
 		value string
 		err   error
 	)
+
 	if value, err = getSecretFromKWallet(what); err == nil {
 		return value
 	}

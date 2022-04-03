@@ -16,6 +16,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"r00t2.io/gosecret"
@@ -24,7 +25,7 @@ import (
 // Gets a secret from libsecrets
 func getSecretFromSecretsService(what string) (string, error) {
 	if os.Getenv("USE_KWALLET") != "" {
-		return "", nil
+		return "", fmt.Errorf("Skipping libesecret")
 	}
 
 	var (
