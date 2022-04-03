@@ -2,12 +2,16 @@
 
 `bwv` is a small helper application for serving Bitwarden secrets over HTTP(S).
 
-I created this application to work primarily alongside Hashicorp Vault which I run inside a local 3 node Kubernetes cluster.
-as there is no easy way of automatically unsealing Vault when running it outside of a cloud environment.
+I created this application to primarily serve Hashicorp Vault unseal keys from my desktop over HTTP(S) to feed inside a local 3-node
+kubernetes cluster. See the example at the end of this document for how this may be implemented to auto-unseal Hashicorp Vault.
 
 > Note.
 > Much of the bitwarden API and cryptography functionality is drawn from the `bitw` application (https://github.com/mvdan/bitw)
 > however there is no association between the two applications and any issues found with this repo should be reported here.
+
+> Due to the integrations with KWallet, Libsecret and SystemD, this application only works on the Linux platform today.
+> If someone knows how to integrate similar functionality on other platforms, I would welcome pull requests.
+
 
 ## Configuration
 To configure `bwv` to access your Bitwarden account details, you may do this in a number of ways:
@@ -24,14 +28,23 @@ BW_EMAIL
 ```
 
 ### Environment variables (not recommended)
-create the environment variables containing your details. This isn't recommended as it requires them to be stored unencrypted
-inside the environment where they can be easily accessed.
+Create the environment variables containing your details.
+
+I generally avoid recommending this method as it involves credentials to be stored unencrypted inside the environment
+where they can be easily accessed. It would also require them to be written in plaintext to disk for service automation.
 
 ## kwallet
-Store the above secrets in kwallet at /Passwords/bwvault
+Store the above secrets in kwallet at `/Passwords/bwvault`
 
 ## libsecrets
-Use the libsecrets manager of your choice and store the above secrets as attributes at the same /Passwords/bwvault
+Use the libsecrets manager of your choice and store the above secrets as attributes at the same `/Passwords/bwvault`.
+
+The advantages of using kwallet or libsecret is that credentials are stored encrypted on disk and are generally unlocked
+when you unlock your computer. This reduces the chances of credential leakage.
+
+By restricting this application to userspace, and tying the local client to `BW_CLIENTSECRET` drawn from any of the
+above 3 credential handling methods, your bitwarden secrets can remain secret even if you are running the tool on a
+shared computer.
 
 ## Building
 Clone this repo then run `go build .`
@@ -233,7 +246,7 @@ generated with `bwv genkey`
 kubectl create secret generic vault-bitwarden --from-literal=address=https://example.com:6277 --from-literal=path=example/test --from-literal=token=cKE6o3ZyV8z4jJW1MNTisetS1vSK3pLC
 ```
 
-Edit your vault helm chart to include the configmap and secret.
+Edit your [vault helm chart values](https://github.com/hashicorp/vault-helm/blob/main/values.yaml) to include the configmap and secret.
 
 ```
 server:
@@ -270,4 +283,4 @@ kubectl scale statefulsets/vault --replicas=0
 helm upgrade vault hashicorp/vault -f values.yaml
 ```
 
-When Vault is started, this script will be called and auto-unseal using the keys stored at unseal-1, unseal-2 and unseal-3
+When Vault is started, this script will be called and auto-unseal using the keys stored at unseal-1, unseal-2 and unseal-3.
