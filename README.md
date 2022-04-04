@@ -51,6 +51,10 @@ Clone this repo then run `go build .`
 
 ## Commands:
 
+> Note:
+> The commands listed here, including credential access, are only available to localhost.
+> If you need to access credentials over the network, see the API documention below.
+
 - `serve` Run bwv server in foreground.
 - `install` Install the userspace systemd service
 - `start` Start the userspace systemd service
@@ -150,11 +154,7 @@ and cheap and if you need to serve externally, letsencrypt is your friend.
 ### API tokens
 When connecting to the `bwv` server from any address other than `localhost`, an API token is required. Localhost uses either your `BW_CLIENTSECRET` or `BW_PASSWORD` to achieve this with the preference being `BW_CLIENTSECRET`.
 
-An api token is a random 32 character string which is stored encrypted in the server configuration. The encryption uses a `pbkdf2` key derived from your master password. You are given the plaintext string which should be submitted as a `Bearer` token when accessing the api.
-
-```
-$ curl -s -H "Authorization: Bearer TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO" "https://example.com:6277/example/test"
-```
+An api token is a random 32 character string which is stored encrypted in the server configuration. The encryption uses a `pbkdf2` key derived from your master password. You are given the plaintext string which should be submitted as a `Bearer` token when accessing the api. See below.
 
 To generate an API token, use the genkey command.
 
@@ -192,9 +192,18 @@ properties are allowed:
 The API for this application is simple.
 
 - `/reload` [INTERNAL] Tells the server to reload its config. Normally you do not need to access this endpoint.
-- `/path/to/credential` get the full contents at `path/to/credential`
-- `/path/?property=username[,password]` A top level attribute from the credential such as username or password
-- `/path/?field=my-custom-field[,another-field]` Fields are custom attributes set on the credential
+- `/path/to/credential` get the full contents at `path/to/credential`.
+- `/path/?property=username[,password]` A top level attribute from the credential such as username or password.
+- `/path/?field=my-custom-field[,another-field]` Fields are custom attributes set on the credential.
+
+All API calls must be made with an API token passed along with the request as a Bearer token.
+
+```
+$ curl -s -H "Authorization: Bearer TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO" "https://example.com:6277/example/test"
+```
+
+Failure to provide a token, using anything other than `Bearer`, or using a token not assigned to the address or range
+you are accessing the API from, will result in a `403 Permission Denied` response code. 
 
 ## A real-world example with Hashicorp Vault
 
