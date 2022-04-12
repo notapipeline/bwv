@@ -79,28 +79,25 @@ func main() {
 			fmt.Println("Only a single IP or CIDR range should be provided")
 			return
 		}
-		if err = parseWhitelist(&s, os.Args[2], false); err != nil {
-			fmt.Println(err.Error())
-			return
-		}
-		s.AddApiKey(os.Args[2])
-	case "revoke":
 		s.load()
+		if err = parseWhitelist(&s, os.Args[2], false); err == nil {
+			s.AddApiKey(os.Args[2])
+		}
+	case "revoke":
 		if len(os.Args) < 3 {
 			fmt.Println("Please specify the api key or ip/range to revoke")
 			return
 		}
-		s.RevokeApiKey(os.Args[2])
+		s.load()
+		if ip := s.RevokeApiKey(os.Args[2]); ip != "" {
+			err = parseWhitelist(&s, ip, true)
+		}
 	case "whitelist":
-		if err = parseWhitelist(&s, os.Args[2], false); err != nil {
-			fmt.Println(err.Error())
-			return
-		}
+		s.load()
+		err = parseWhitelist(&s, os.Args[2], false)
 	case "drop":
-		if err = parseWhitelist(&s, os.Args[2], true); err != nil {
-			fmt.Println(err.Error())
-			return
-		}
+		s.load()
+		err = parseWhitelist(&s, os.Args[2], true)
 	default:
 		log.SetOutput(ioutil.Discard)
 		s.load()
@@ -127,7 +124,6 @@ func main() {
 }
 
 func parseWhitelist(s *server, w string, remove bool) error {
-	s.load()
 	var whitelist []string = strings.Split(w, ",")
 	for _, addr := range whitelist {
 		if net.ParseIP(os.Args[2]) == nil {

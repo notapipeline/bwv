@@ -104,7 +104,7 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 	var (
 		addr         string   = strings.Split(r.RemoteAddr, ":")[0]
 		useWhitelist bool     = len(s.Whitelist) != 0
-		matched      bool     = !useWhitelist
+		matched      bool     = !useWhitelist || containsIp("127.0.0.0/24", addr)
 		auth         []string = strings.Split(r.Header.Get("Authorization"), " ")
 	)
 
@@ -117,6 +117,7 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	log.Println(addr, useWhitelist, matched)
 	if !matched || len(auth) != 2 || auth[0] != "Bearer" || !s.checkApiKey(addr, auth[1]) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprintf(w, "Denied request from ip %s\n", addr)

@@ -59,16 +59,19 @@ func (s *server) save() {
 	}
 }
 
-func (s *server) RevokeApiKey(key string) {
+func (s *server) RevokeApiKey(key string) string {
 	var keys map[string]string = make(map[string]string)
+	var retVal string = ""
 	for k, v := range s.ApiKeys {
 		if k == key || v == bitw.DeriveHttpGetAPIKey(key) {
+			retVal = k
 			continue
 		}
 		keys[k] = v
 	}
 	s.ApiKeys = keys
 	s.save()
+	return retVal
 }
 
 func (s *server) checkApiKey(addr, key string) bool {
