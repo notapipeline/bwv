@@ -122,6 +122,7 @@ func SetMasterPassword(password, email string, plr *preLoginResponse) string {
 	masterpw = make([]byte, len(mpw))
 	if err := syscall.Mlock(masterpw); err != nil {
 		log.Fatal("Failed to lock memory for master password")
+		return ""
 	}
 	for i, b := range mpw {
 		masterpw[i] = b
