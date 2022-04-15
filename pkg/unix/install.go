@@ -36,10 +36,10 @@ Environment="NO_DATELOG=true"
 ExecStart=/usr/bin/bwv serve
 ExecReload=/bin/kill -SIGINT "$MAINPID"
 Restart=always
-RestartSec=120
+RestartSec=10
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 `
 
 var systemd *dbus.Conn
