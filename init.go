@@ -157,6 +157,7 @@ func init() {
 	go func() {
 		tick := time.Tick(DURATION * time.Second)
 		for {
+			log.Println("Syncing...")
 			syncStore(loginResponse)
 			<-tick
 		}
