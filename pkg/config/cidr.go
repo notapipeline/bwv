@@ -13,15 +13,15 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package main
+package config
 
 import (
 	"encoding/binary"
 	"net"
 )
 
-func containsIp(netw string, ip string) bool {
-	if hosts := cidrHosts(netw); hosts != nil {
+func ContainsIp(netw string, ip string) bool {
+	if hosts := CidrHosts(netw); hosts != nil {
 		for _, host := range hosts {
 			if ip == host {
 				return true
@@ -31,7 +31,7 @@ func containsIp(netw string, ip string) bool {
 	return false
 }
 
-func cidrHosts(netw string) []string {
+func CidrHosts(netw string) []string {
 	var hosts []string
 
 	_, ipv4Net, err := net.ParseCIDR(netw)

@@ -16,42 +16,26 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/hokaccha/go-prettyjson"
 	"github.com/notapipeline/bwv/pkg/bitw"
-	"gopkg.in/yaml.v2"
+	"github.com/notapipeline/bwv/pkg/config"
 )
 
 const DefaultPort = 6277
 
 type server struct {
-	Whitelist []string          `yaml:"whitelist"`
-	Cert      string            `yaml:"cert"`
-	Key       string            `yaml:"key"`
-	Port      int               `yaml:"port"`
-	ApiKeys   map[string]string `yaml:"apikeys"`
+	c config.Config
 }
 
 func (s *server) IsSecure() (secure bool) {
-	secure = false
-	if s.Cert != "" && s.Key != "" {
-		secure = true
-	}
-	return
-}
-
-func getConfigPath() string {
-	home, _ := os.UserHomeDir()
-	return fmt.Sprintf("%s/.config/bwv/server.yaml", home)
+	return s.c.IsSecure()
 }
 
 func unique(what []string) (unique []string) {
@@ -103,14 +87,14 @@ func (s *server) parseProperties(c bitw.DecryptedCipher, propertyString string) 
 func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 	var (
 		addr         string   = strings.Split(r.RemoteAddr, ":")[0]
-		useWhitelist bool     = len(s.Whitelist) != 0
-		matched      bool     = !useWhitelist || containsIp("127.0.0.0/24", addr)
+		useWhitelist bool     = len(s.c.Whitelist) != 0
+		matched      bool     = !useWhitelist || config.ContainsIp("127.0.0.0/24", addr)
 		auth         []string = strings.Split(r.Header.Get("Authorization"), " ")
 	)
 
 	if useWhitelist {
-		for _, ip := range s.Whitelist {
-			if ip == addr || containsIp(ip, addr) {
+		for _, ip := range s.c.Whitelist {
+			if ip == addr || config.ContainsIp(ip, addr) {
 				matched = true
 				break
 			}
@@ -118,7 +102,7 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Println(addr, useWhitelist, matched)
-	if !matched || len(auth) != 2 || auth[0] != "Bearer" || !s.checkApiKey(addr, auth[1]) {
+	if !matched || len(auth) != 2 || auth[0] != "Bearer" || s.c.CheckApiKey(addr, auth[1]) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprintf(w, "Denied request from ip %s\n", addr)
 		return
@@ -134,7 +118,7 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if strings.TrimRight(path, "/") == "bwvreload" {
-			s.load()
+			s.c.Load()
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -216,20 +200,6 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) load() error {
-	var configPath string = getConfigPath()
-	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	yamlFile, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Loading config file %s\n", configPath)
-	return yaml.Unmarshal(yamlFile, s)
-}
-
 func (s *server) listenAndServe() {
 	var (
 		listener net.Listener
@@ -237,29 +207,29 @@ func (s *server) listenAndServe() {
 		port     int = DefaultPort
 	)
 
-	if err := s.load(); err != nil {
+	if err := s.c.Load(); err != nil {
 		log.Fatal(fmt.Sprintf("Invalid config file"), err)
 	}
 
 	sm := http.NewServeMux()
 	sm.HandleFunc("/", s.getHttpPath)
-	if s.Port == 0 {
-		s.Port = DefaultPort
-		s.save()
+	if s.c.Port == 0 {
+		s.c.Port = DefaultPort
+		s.c.Save()
 	}
-	if listener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.Port)); err != nil {
+	if listener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.c.Port)); err != nil {
 		log.Fatal(err)
 	}
 	<-syncComplete
-	if s.Cert != "" && s.Key != "" {
-		log.Printf("Listening for secure connections on :%d (whitelist %+v)\n", port, s.Whitelist)
-		log.Fatal(http.ServeTLS(listener, sm, s.Cert, s.Key))
+	if s.c.IsSecure() {
+		log.Printf("Listening for secure connections on :%d (whitelist %+v)\n", port, s.c.Whitelist)
+		log.Fatal(http.ServeTLS(listener, sm, s.c.Cert, s.c.Key))
 	} else {
-		if len(s.Whitelist) == 0 {
+		if len(s.c.Whitelist) == 0 {
 			log.Fatal("Cowardly - refusing to start unsecure credential server without a whitelist")
 			return
 		}
-		log.Printf("Listening for unsecured connections on :%d (whitelist %+v)\n", port, s.Whitelist)
+		log.Printf("Listening for unsecured connections on :%d (whitelist %+v)\n", port, s.c.Whitelist)
 		log.Fatal(http.Serve(listener, sm))
 	}
 }

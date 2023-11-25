@@ -17,7 +17,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -26,14 +26,14 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 
 	"github.com/hokaccha/go-prettyjson"
-	"github.com/notapipeline/bwv/pkg/bitw"
+	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/unix"
 )
 
 var (
-	loginResponse *bitw.LoginResponse
-	authToken     string
-	appName       string = "bwv"
+	//loginResponse *bitw.LoginResponse
+	//authToken     string
+	appName string = "bwv"
 )
 
 func main() {
@@ -45,8 +45,10 @@ func main() {
 	var (
 		path string
 		c    interface{}
-		s    server = server{}
-		err  error
+		s    server = server{
+			c: config.Config{},
+		}
+		err error
 	)
 
 	path = os.Args[1]
@@ -54,8 +56,11 @@ func main() {
 	case "serve":
 		s.listenAndServe()
 	case "install":
-		if err = unix.InstallService(appName); err == nil {
-			unix.StartService(appName)
+		if err = unix.InstallService(appName); err != nil {
+			log.Fatal(err)
+		}
+		if err = unix.StartService(appName); err != nil {
+			log.Fatal(err)
 		}
 	case "remove":
 		err = unix.RemoveService(appName)
@@ -79,36 +84,57 @@ func main() {
 			fmt.Println("Only a single IP or CIDR range should be provided")
 			return
 		}
-		s.load()
-		if err = parseWhitelist(&s, os.Args[2], false); err == nil {
-			s.AddApiKey(os.Args[2])
+		s.c.Load()
+		if err = parseWhitelist(&s.c, os.Args[2], false); err == nil {
+			var token string
+			if token, err = s.c.AddApiKey(os.Args[2]); err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf(
+				"\n========================================\ntoken = %s"+
+					"\n========================================\n\n",
+				token)
+
 		}
 	case "revoke":
+		var ip string
 		if len(os.Args) < 3 {
 			fmt.Println("Please specify the api key or ip/range to revoke")
 			return
 		}
-		s.load()
-		if ip := s.RevokeApiKey(os.Args[2]); ip != "" {
-			err = parseWhitelist(&s, ip, true)
+		if err = s.c.Load(); err != nil {
+			log.Fatal(err)
+		}
+
+		ip, err = s.c.RevokeApiKey(os.Args[2])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if ip != "" {
+			err = parseWhitelist(&s.c, ip, true)
 		}
 	case "whitelist":
-		s.load()
-		err = parseWhitelist(&s, os.Args[2], false)
+		if err = s.c.Load(); err != nil {
+			log.Fatal(err)
+		}
+
+		err = parseWhitelist(&s.c, os.Args[2], false)
 	case "drop":
-		s.load()
-		err = parseWhitelist(&s, os.Args[2], true)
+		s.c.Load()
+		err = parseWhitelist(&s.c, os.Args[2], true)
 	default:
-		log.SetOutput(ioutil.Discard)
-		s.load()
-		if c = client(path, s.Port, s.IsSecure(), false); c == nil {
+		log.SetOutput(io.Discard)
+		s.c.Load()
+		if c = client(path, s.c.Port, s.IsSecure(), false); c == nil {
 			return
 		}
-		s, e := prettyjson.Marshal(c)
+		// print server config
+		str, e := prettyjson.Marshal(c)
 		if e != nil {
 			log.Fatal(e)
 		}
-		fmt.Println(string(s))
+		fmt.Println(string(str))
 		return
 	}
 	if err != nil {
@@ -119,11 +145,11 @@ func main() {
 		"whitelist", "drop",
 	}
 	if contains(os.Args[1], reloadCommands) && isRunning() {
-		client("bwvreload", s.Port, s.IsSecure(), false)
+		client("bwvreload", s.c.Port, s.c.IsSecure(), false)
 	}
 }
 
-func parseWhitelist(s *server, w string, remove bool) error {
+func parseWhitelist(conf *config.Config, w string, remove bool) error {
 	var whitelist []string = strings.Split(w, ",")
 	for _, addr := range whitelist {
 		if net.ParseIP(os.Args[2]) == nil {
@@ -138,28 +164,28 @@ func parseWhitelist(s *server, w string, remove bool) error {
 
 		if remove {
 			var newWhitelist []string = make([]string, 0)
-			for _, netw := range s.Whitelist {
+			for _, netw := range conf.Whitelist {
 				if netw == addr {
 					continue
-				} else if containsIp(netw, addr) {
+				} else if config.ContainsIp(netw, addr) {
 					return fmt.Errorf("Address %s is part of CIDR range %s which is not being removed", addr, netw)
 				}
 				newWhitelist = append(newWhitelist, netw)
 			}
-			s.Whitelist = newWhitelist
+			conf.Whitelist = newWhitelist
 		} else {
 			var exists bool = false
-			for _, netw := range s.Whitelist {
-				if addr == netw || containsIp(netw, addr) {
+			for _, netw := range conf.Whitelist {
+				if addr == netw || config.ContainsIp(netw, addr) {
 					exists = true
 				}
 			}
 			if !exists {
-				s.Whitelist = append(s.Whitelist, addr)
+				conf.Whitelist = append(conf.Whitelist, addr)
 			}
 		}
 	}
-	s.save()
+	conf.Save()
 	return nil
 }
 

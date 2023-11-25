@@ -1,3 +1,5 @@
+//go:build !windows
+
 /*
  *   Copyright 2022 Martin Proffitt <mproffitt@choclab.net>
  *
@@ -13,7 +15,6 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-//go:build !windows
 package unix
 
 import (
@@ -60,9 +61,10 @@ func ServiceStatus(serviceName string) (*dbus.UnitStatus, error) {
 		err      error
 		service  string = fmt.Sprintf("%s.service", serviceName)
 		statuses []dbus.UnitStatus
+		ctx      context.Context = context.Background()
 	)
 
-	if statuses, err = systemd.ListUnitsByNames([]string{service}); err != nil {
+	if statuses, err = systemd.ListUnitsByNamesContext(ctx, []string{service}); err != nil {
 		return nil, fmt.Errorf("Failed to get service status for %s", serviceName)
 	}
 	return &statuses[0], nil
