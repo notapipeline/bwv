@@ -16,8 +16,11 @@
 package bitw
 
 import (
+	"context"
+	"log"
 	"os"
 
+	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/peterh/liner"
 )
 
@@ -55,4 +58,13 @@ func ReadLine(prompt string) (string, error) {
 		return "", err
 	}
 	return password, nil
+}
+
+func syncStore(loginResponse *LoginResponse) {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, transport.AuthToken{}, loginResponse.AccessToken)
+	if err := Sync(ctx); err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Sync complete")
 }

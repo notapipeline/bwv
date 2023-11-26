@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 
@@ -57,6 +58,7 @@ func urlValues(pairs ...string) url.Values {
 // This information is public in that it can always be retrieved by POSTing the
 // users email address to the prelogin endpoint.
 func Prelogin(password, email string) (hashed string, err error) {
+	log.Println("executing pre-login stage")
 	var preLogin types.KDFInfo
 	if err = transport.DefaultHttpClient.Post(context.Background(), Endpoint.ApiServer+"/accounts/prelogin", &preLogin, preLoginRequest{
 		Email: email,
@@ -74,6 +76,7 @@ func Prelogin(password, email string) (hashed string, err error) {
 // ApiLogin retrieves an API token from the Bitwarden API by sending the
 // users client_id and client_secret.
 func ApiLogin(clientId, clientSecret string) (*LoginResponse, error) {
+	log.Println("executing api login")
 	var lr LoginResponse
 	login := urlValues(
 		"grant_type", "client_credentials",
@@ -99,6 +102,7 @@ func ApiLogin(clientId, clientSecret string) (*LoginResponse, error) {
 //
 // This method should not be used for background services - use ApiLogin instead
 func UserLogin(hashedPassword, email string) (*LoginResponse, error) {
+	log.Println("executing user login")
 	var lr LoginResponse
 	login := urlValues(
 		"grant_type", "password",

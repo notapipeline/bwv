@@ -13,7 +13,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package main
+package bitw
 
 import (
 	"fmt"
@@ -22,19 +22,26 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/hokaccha/go-prettyjson"
-	"github.com/notapipeline/bwv/pkg/bitw"
 	"github.com/notapipeline/bwv/pkg/config"
 )
 
-const DefaultPort = 6277
+const DefaultPort = 6278
+const DURATION = 60
 
-type server struct {
+type HttpServer struct {
 	c config.Config
 }
 
-func (s *server) IsSecure() (secure bool) {
+func NewHttpServer() *HttpServer {
+	return &HttpServer{
+		c: *config.New(),
+	}
+}
+
+func (s *HttpServer) IsSecure() (secure bool) {
 	return s.c.IsSecure()
 }
 
@@ -51,10 +58,10 @@ func unique(what []string) (unique []string) {
 	return
 }
 
-func (s *server) parseFields(c bitw.DecryptedCipher, fieldString string) (keys []string, values map[string]interface{}) {
+func (s *HttpServer) parseFields(c DecryptedCipher, fieldString string) (keys []string, values map[string]interface{}) {
 	var (
-		ok     bool = false
-		fields      = unique(strings.Split(fieldString, ","))
+		ok     bool
+		fields = unique(strings.Split(fieldString, ","))
 	)
 	keys = make([]string, 0)
 	values = make(map[string]interface{})
@@ -69,7 +76,7 @@ func (s *server) parseFields(c bitw.DecryptedCipher, fieldString string) (keys [
 	return
 }
 
-func (s *server) parseProperties(c bitw.DecryptedCipher, propertyString string) (keys []string, values map[string]interface{}) {
+func (s *HttpServer) parseProperties(c DecryptedCipher, propertyString string) (keys []string, values map[string]interface{}) {
 	var properties = unique(strings.Split(propertyString, ","))
 	keys = make([]string, 0)
 	values = make(map[string]interface{})
@@ -84,7 +91,7 @@ func (s *server) parseProperties(c bitw.DecryptedCipher, propertyString string) 
 	return
 }
 
-func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
+func (s *HttpServer) getHttpPath(w http.ResponseWriter, r *http.Request) {
 	var (
 		addr         string   = strings.Split(r.RemoteAddr, ":")[0]
 		useWhitelist bool     = len(s.c.Whitelist) != 0
@@ -117,14 +124,8 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 			params url.Values = r.URL.Query()
 		)
 
-		if strings.TrimRight(path, "/") == "bwvreload" {
-			s.c.Load()
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
 		log.Printf("[GET] %s %+v from %s\n", path, params, addr)
-		if c, ok = bitw.Get(path); !ok {
+		if c, ok = Get(path); !ok {
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprintf(w, "Path '%s' not found\n", path)
 			return
@@ -139,12 +140,12 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 
 		if fields, ok := params["field"]; ok {
 			useFields = true
-			fieldKeys, fieldValues = s.parseFields(c.([]bitw.DecryptedCipher)[0], strings.Join(fields, ","))
+			fieldKeys, fieldValues = s.parseFields(c.([]DecryptedCipher)[0], strings.Join(fields, ","))
 		}
 
 		if properties, ok := params["property"]; ok {
 			useProperties = true
-			propertyKeys, propertyValues = s.parseProperties(c.([]bitw.DecryptedCipher)[0], strings.Join(properties, ","))
+			propertyKeys, propertyValues = s.parseProperties(c.([]DecryptedCipher)[0], strings.Join(properties, ","))
 		}
 
 		if len(propertyKeys) == 0 && len(fieldKeys) > 0 {
@@ -200,27 +201,96 @@ func (s *server) getHttpPath(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) listenAndServe() {
+// storeToken stores a token sent via POST in the Authorization header
+// The token is encrypted with the master password and stored in the
+// config file for later verification.
+func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 	var (
-		listener net.Listener
-		err      error
-		port     int = DefaultPort
+		addr  string   = strings.Split(r.RemoteAddr, ":")[0]
+		auth  []string = strings.Split(r.Header.Get("Authorization"), " ")
+		token string
+		err   error
+	)
+	log.Printf("%q /storetoken called from %s", r.Method, addr)
+	switch r.Method {
+	case "POST":
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, "invalid method")
+		return
+	}
+	// Verify the sent token can be decrypted with the known master password
+	if token, err = DecryptToken(auth[1]); err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, "bwv denied storeToken request from ip %s - %q\n", addr, err)
+		return
+	}
+
+	s.c.ApiKeys[addr] = token
+	w.WriteHeader(http.StatusNoContent)
+	fmt.Fprintf(w, "bwv stored token for ip %s\n", addr)
+}
+
+func (s *HttpServer) reload(w http.ResponseWriter, r *http.Request) {
+	if err := s.c.Load(config.ConfigModeServer); err != nil {
+		log.Printf("error: invalid config file %q", err)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *HttpServer) ListenAndServe() {
+	var (
+		secrets       map[string]string = config.GetSecretsFromUserEnvOrStore()
+		listener      net.Listener
+		err           error
+		port          int = DefaultPort
+		hashed        string
+		useApiKeys    bool = secrets["BW_CLIENTID"] != "" && secrets["BW_CLIENTSECRET"] != ""
+		loginResponse *LoginResponse
 	)
 
-	if err := s.c.Load(); err != nil {
-		log.Fatal(fmt.Sprintf("Invalid config file"), err)
+	if hashed, err = Prelogin(secrets["BW_PASSWORD"], secrets["BW_EMAIL"]); err != nil {
+		log.Fatal(err)
+	}
+
+	if useApiKeys {
+		if loginResponse, err = ApiLogin(secrets["BW_CLIENTID"], secrets["BW_CLIENTSECRET"]); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		if loginResponse, err = UserLogin(hashed, secrets["BW_EMAIL"]); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// force sync every DURATION seconds
+	go func() {
+		for {
+			log.Println("Syncing...")
+			syncStore(loginResponse)
+			<-time.After(DURATION * time.Second)
+		}
+	}()
+
+	if err := s.c.Load(config.ConfigModeServer); err != nil {
+		log.Fatalf("Invalid config file: %q", err)
 	}
 
 	sm := http.NewServeMux()
+	sm.HandleFunc("/api/v1/reload", s.reload)
+	sm.HandleFunc("/api/v1/storetoken", s.storeToken)
 	sm.HandleFunc("/", s.getHttpPath)
 	if s.c.Port == 0 {
 		s.c.Port = DefaultPort
-		s.c.Save()
+		if err = s.c.Save(); err != nil {
+			log.Fatal(err)
+		}
 	}
 	if listener, err = net.Listen("tcp4", fmt.Sprintf(":%d", s.c.Port)); err != nil {
 		log.Fatal(err)
 	}
-	<-syncComplete
+
 	if s.c.IsSecure() {
 		log.Printf("Listening for secure connections on :%d (whitelist %+v)\n", port, s.c.Whitelist)
 		log.Fatal(http.ServeTLS(listener, sm, s.c.Cert, s.c.Key))

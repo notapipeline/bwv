@@ -8,7 +8,9 @@ require (
 	github.com/google/uuid v1.4.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f
 	github.com/peterh/liner v1.2.2
+	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
+	github.com/twpayne/go-pinentry v0.3.0
 	golang.org/x/crypto v0.15.0
 	gopkg.in/yaml.v2 v2.4.0
 	r00t2.io/gokwallet v1.0.0
@@ -25,7 +27,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
-	github.com/spf13/cobra v1.8.0 // indirect
+	github.com/rs/zerolog v1.29.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

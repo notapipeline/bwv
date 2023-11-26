@@ -1,3 +1,18 @@
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package config
 
 import (
@@ -19,7 +34,7 @@ import (
 // be mocked in tests
 var (
 	configPath func(m ConfigMode) string = getConfigPath
-	getSecrets func() map[string]string  = GetSecretsFromEnvOrStore
+	getSecrets func() map[string]string  = GetSecretsFromUserEnvOrStore
 )
 
 type Config struct {
@@ -85,7 +100,7 @@ func DeriveHttpGetAPIKey(partial string) string {
 	return base64.StdEncoding.EncodeToString(c)
 }
 
-func (c *Config) CreateToken() string {
+func CreateToken() string {
 	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
 	b := make([]rune, 32)
 	for i := range b {
@@ -96,7 +111,7 @@ func (c *Config) CreateToken() string {
 
 func (c *Config) AddApiKey(hostOrCidr string) (string, error) {
 	var (
-		token string = c.CreateToken()
+		token string = CreateToken()
 		key          = DeriveHttpGetAPIKey(token)
 	)
 	c.ApiKeys[hostOrCidr] = key
@@ -126,7 +141,7 @@ func getConfigPath(m ConfigMode) string {
 	if m == ConfigModeClient {
 		return fmt.Sprintf("%s/.config/bwv/client.yaml", home)
 	}
-	return fmt.Sprintf("%s/.config/bwv/server.yaml", home)
+	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
 }
 
 func (c *Config) RevokeApiKey(what string) (string, error) {

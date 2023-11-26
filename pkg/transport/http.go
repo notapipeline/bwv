@@ -1,3 +1,18 @@
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package transport
 
 import (
@@ -16,8 +31,23 @@ import (
 	backoff "github.com/cenkalti/backoff/v4"
 )
 
+// AuthToken is a container for the authentication token that is used to
+// authenticate with the upstream server.
 type AuthToken struct{}
 
+// Post sends a POST request to the given urlstr with the given send body.
+// The response is decoded into the given recv object.
+//
+// If the send object is a url.Values, the request will be sent with
+// Content-Type: application/x-www-form-urlencoded.
+//
+// If the send object is not a url.Values, the request will be sent with
+// Content-Type: application/json.
+//
+// If the send object is a url.Values and the username and scope fields are
+// set, the request will be sent with an extra header:
+//
+//	Auth-Email: <base64-encoded username>
 func (c *client) Post(ctx context.Context, urlstr string, recv, send any) error {
 	var (
 		reader      io.Reader
@@ -57,6 +87,8 @@ func (c *client) Post(ctx context.Context, urlstr string, recv, send any) error 
 	return c.DoWithBackoff(ctx, request, recv)
 }
 
+// Get sends a GET request to the given urlstr.
+// The response is decoded into the given recv object.
 func (c *client) Get(ctx context.Context, urlstr string, recv interface{}) error {
 	req, err := http.NewRequest("GET", urlstr, nil)
 	if err != nil {
@@ -65,6 +97,8 @@ func (c *client) Get(ctx context.Context, urlstr string, recv interface{}) error
 	return c.DoWithBackoff(ctx, req, recv)
 }
 
+// DoWithBackoff sends the given request and decodes the response into the given
+// recv object. If the request fails, it will retry with exponential backoff.
 func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv interface{}) error {
 	var (
 		testInitialInterval     = 500 * time.Millisecond
@@ -92,10 +126,19 @@ func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv inte
 	return backoff.RetryNotifyWithTimer(f, exp, notify, nil)
 }
 
+// Do sends the given request and decodes the response into the given recv
+// object. If the request fails, it will return an error.
+//
+// If the request fails with a 400, 401, 403, 404, or 409 status code, the
+// error will be a *backoff.PermanentError with the HTTP error wrapped inside
+// against the `Err` property.
+//
+// On success the response body will be JSON decoded into the given recv object.
 func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 	if token, ok := ctx.Value(AuthToken{}).(string); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	req.Header.Set("User-Agent", "curl/8.2.1")
 
 	var (
 		response *http.Response
@@ -111,11 +154,36 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 		return err
 	}
 
-	if response.StatusCode != 200 {
-		return &ErrStatusCode{response.StatusCode, body}
+	switch response.StatusCode {
+	case 200:
+		break
+	case 400:
+		return &backoff.PermanentError{
+			Err: &ErrBadRequest{response.StatusCode, body},
+		}
+	case 401:
+		return &backoff.PermanentError{
+			Err: &ErrUnauthorized{response.StatusCode, body},
+		}
+	case 403:
+		return &backoff.PermanentError{
+			Err: &ErrForbidden{response.StatusCode, body},
+		}
+	case 404:
+		return &backoff.PermanentError{
+			Err: &ErrNotFound{response.StatusCode, body},
+		}
+	case 409:
+		return &backoff.PermanentError{
+			Err: &ErrConflict{response.StatusCode, body},
+		}
+	case 500:
+		return &ErrInternal{response.StatusCode, body}
+	default:
+		return &ErrUnknown{response.StatusCode, body}
+
 	}
 
 	err = json.Unmarshal(body, recv)
-
 	return err
 }

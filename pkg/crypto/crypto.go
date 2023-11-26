@@ -1,5 +1,18 @@
-// Copyright (c) 2019, Daniel Martí <mvdan@mvdan.cc>
-// This file is covered by the license at https://github.com/mvdan/bitw/blob/master/LICENSE
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package crypto
 
 import (
@@ -32,8 +45,26 @@ func DeriveMasterKey(password []byte, email string, kdf types.KDFInfo) ([]byte, 
 	}
 }
 
+func DeriveStretchedMasterKey(password []byte, email string, kdf types.KDFInfo) ([]byte, []byte, error) {
+	var (
+		key []byte
+		err error
+	)
+
+	if key, err = DeriveMasterKey(password, email, kdf); err != nil {
+		return nil, nil, err
+	}
+
+	return StretchKey(key)
+}
+
 func EncryptWith(data []byte, csType types.CipherStringType, key, macKey []byte) (types.CipherString, error) {
-	s := types.CipherString{}
+	var (
+		s     types.CipherString = types.CipherString{}
+		block cipher.Block
+		err   error
+	)
+
 	switch csType {
 	case types.AesCbc256_B64, types.AesCbc256_HmacSha256_B64:
 	default:
@@ -41,10 +72,11 @@ func EncryptWith(data []byte, csType types.CipherStringType, key, macKey []byte)
 	}
 	s.Type = csType
 
-	data = PadPKCS7(data, aes.BlockSize)
+	if data, err = PadPKCS7(data, aes.BlockSize); err != nil {
+		return s, err
+	}
 
-	block, err := aes.NewCipher(key)
-	if err != nil {
+	if block, err = aes.NewCipher(key); err != nil {
 		return s, err
 	}
 
@@ -76,8 +108,11 @@ func EncryptWith(data []byte, csType types.CipherStringType, key, macKey []byte)
 }
 
 func DecryptWith(s types.CipherString, key, macKey []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
+	var (
+		block cipher.Block
+		err   error
+	)
+	if block, err = aes.NewCipher(key); err != nil {
 		return nil, err
 	}
 
@@ -95,18 +130,14 @@ func DecryptWith(s types.CipherString, key, macKey []byte) ([]byte, error) {
 		msg = append(msg, s.IV...)
 		msg = append(msg, s.CT...)
 		if !ValidMAC(msg, s.MAC, macKey) {
-			return nil, fmt.Errorf("decrypt: MAC mismatch")
+			return nil, fmt.Errorf("decrypt: MAC mismatch %d != %d", len(s.MAC), len(macKey))
 		}
 	}
 
 	mode := cipher.NewCBCDecrypter(block, s.IV)
 	dst := make([]byte, len(s.CT))
 	mode.CryptBlocks(dst, s.CT)
-	dst, err = UnpadPKCS7(dst, aes.BlockSize)
-	if err != nil {
-		return nil, err
-	}
-	return dst, nil
+	return UnpadPKCS7(dst, aes.BlockSize)
 }
 
 func UnpadPKCS7(src []byte, size int) ([]byte, error) {
@@ -114,27 +145,22 @@ func UnpadPKCS7(src []byte, size int) ([]byte, error) {
 	if len(src)%size != 0 {
 		return nil, fmt.Errorf("expected PKCS7 padding for block size %d, but have %d bytes", size, len(src))
 	}
-	if len(src) <= int(n) {
-		return nil, fmt.Errorf("cannot unpad %d bytes out of a total of %d", n, len(src))
-	}
 	src = src[:len(src)-int(n)]
 	return src, nil
 }
 
-func PadPKCS7(src []byte, size int) []byte {
-	// Note that we always pad, even if rem==0. This is because unpad must
-	// always remove at least one byte to be unambiguous.
+func PadPKCS7(src []byte, size int) ([]byte, error) {
 	rem := len(src) % size
 	n := size - rem
 	if n > math.MaxUint8 {
-		panic(fmt.Sprintf("cannot pad over %d bytes, but got %d", math.MaxUint8, n))
+		return nil, fmt.Errorf("cannot pad over %d bytes, but got %d", math.MaxUint8, n)
 	}
 	padded := make([]byte, len(src)+n)
 	copy(padded, src)
 	for i := len(src); i < len(padded); i++ {
 		padded[i] = byte(n)
 	}
-	return padded
+	return padded, nil
 }
 
 func ValidMAC(message, messageMAC, key []byte) bool {

@@ -24,6 +24,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/notapipeline/bwv/pkg/cache"
+	"github.com/notapipeline/bwv/pkg/config"
+	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
@@ -171,13 +173,35 @@ func Get(path string) ([]DecryptedCipher, bool) {
 }
 
 func Sync(ctx context.Context) error {
-
 	var data types.DataFile
-	if err := transport.DefaultHttpClient.Get(ctx, Endpoint.ApiServer+"/sync", &data); err != nil {
+	if err := transport.DefaultHttpClient.Get(ctx, Endpoint.ApiServer+"/sync", &data.Sync); err != nil {
 		return fmt.Errorf("could not sync: %v", err)
 	}
 	if err := secrets.Update(data); err != nil {
 		return fmt.Errorf("could not update secrets: %v", err)
 	}
 	return nil
+}
+
+func DecryptToken(token string) (string, error) {
+	var (
+		key, mac  []byte
+		err       error
+		decrypted []byte
+	)
+
+	if key, mac, err = crypto.StretchKey([]byte(cache.MasterPassword())); err != nil {
+		return "", fmt.Errorf("could not stretch key: %v", err)
+	}
+
+	var t types.CipherString = types.CipherString{}
+	if err = t.UnmarshalText([]byte(token)); err != nil {
+		return "", fmt.Errorf("could not unmarshal token: %v", err)
+	}
+
+	if decrypted, err = crypto.DecryptWith(t, key, mac); err != nil {
+		return "", fmt.Errorf("could not decrypt token: %v", err)
+	}
+
+	return config.DeriveHttpGetAPIKey(string(decrypted)), nil
 }

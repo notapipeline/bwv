@@ -1,11 +1,23 @@
 /*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
-
-*/
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package cmd
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/spf13/cobra"
 )
@@ -25,16 +37,66 @@ to quickly create a Cobra application.`,
 	},
 }
 
+var startCommand = &cobra.Command{
+	Use:   "start",
+	Short: "Starts the service",
+	Long:  `Starts the service`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Starting service")
+	},
+}
+
+var stopCommand = &cobra.Command{
+	Use:   "stop",
+	Short: "Stops the service",
+	Long:  `Stops the service`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Stopping service")
+	},
+}
+
+var restartCommand = &cobra.Command{
+	Use:   "restart",
+	Short: "Restart the service",
+	Long:  `Restart the service`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Restart service")
+	},
+}
+
+var statusCommand = &cobra.Command{
+	Use:   "status",
+	Short: "Status of the service",
+	Long:  `Status of the service`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Status of service")
+	},
+}
+
+var installCommand = &cobra.Command{
+	Use:   "install",
+	Short: "Install the service",
+	Long:  `Install the service`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Install service")
+	},
+}
+
+var removeCommand = &cobra.Command{
+	Use:   "remove",
+	Short: "Remove the service",
+	Long:  `Remove the service`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Println("Remove service")
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(serviceCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// serviceCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// serviceCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	serviceCmd.AddCommand(startCommand)
+	serviceCmd.AddCommand(stopCommand)
+	serviceCmd.AddCommand(restartCommand)
+	serviceCmd.AddCommand(statusCommand)
+	serviceCmd.AddCommand(installCommand)
+	serviceCmd.AddCommand(removeCommand)
 }
