@@ -3,11 +3,13 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/notapipeline/bwv/pkg/transport"
@@ -15,8 +17,10 @@ import (
 )
 
 type MockClient struct {
-	code int
-	body string
+	responses []struct {
+		code int
+		body string
+	}
 }
 
 func (m *MockClient) DoWithBackoff(ctx context.Context, req *http.Request, response interface{}) error {
@@ -24,12 +28,23 @@ func (m *MockClient) DoWithBackoff(ctx context.Context, req *http.Request, respo
 }
 
 func (m *MockClient) Do(ctx context.Context, req *http.Request, recv any) error {
-	r := recv.(*struct {
-		Code    int    `json:"statuscode"`
-		Message string `json:"message"`
-	})
-	r.Code = m.code
-	r.Message = m.body
+	response := m.responses[0]
+	m.responses = m.responses[1:]
+	switch response.code {
+	case 400, 401, 403, 404, 429, 500, 503:
+		return &transport.ErrUnknown{
+			Code: response.code,
+			Body: []byte(response.body),
+		}
+	}
+	if err := json.Unmarshal([]byte(response.body), recv); err != nil {
+		r := recv.(*struct {
+			Code    int    `json:"statuscode"`
+			Message string `json:"message"`
+		})
+		r.Code = response.code
+		r.Message = response.body
+	}
 	return nil
 
 }
@@ -77,44 +92,70 @@ func TestGenkeyCmd(t *testing.T) {
 		addresses   []string
 		email       string
 		expectedErr error
-		status      *struct {
+		status      []struct {
 			code int
 			body string
 		}
 	}{
 		{
-			name: "no addresses",
+			name: "no addresses assumes localhost",
 			addresses: []string{
 				"localhost",
 			},
 			email:       "test@example.com",
 			expectedErr: nil,
-			status: &struct {
+			status: []struct {
 				code int
 				body string
-			}{code: 200, body: `{"message":"stored token for address localhost"}`},
+			}{
+				{
+					code: 200,
+					body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
+				},
+				{
+					code: 200,
+					body: `{"statuscode": 200, "message":"stored token for address localhost"}`,
+				},
+			},
 		},
 		{
 			name:        "no email",
 			addresses:   []string{"localhost"},
 			email:       "",
 			expectedErr: errors.New("invalid email address \"mail: no address\""),
-			status: &struct {
-				code int
-				body string
-			}{code: 0, body: ""},
-		},
-		{
-			name:        "rate limited",
-			addresses:   []string{"localhost"},
-			email:       "test@example.com",
-			expectedErr: errors.New(`Failed to store token: {"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`),
-			status: &struct {
+			status: []struct {
 				code int
 				body string
 			}{
-				code: 400,
-				body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+				{
+					code: 200,
+					body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
+				},
+				{
+					code: 0,
+					body: "",
+				},
+			},
+		},
+		{
+			name:      "rate limited",
+			addresses: []string{"localhost"},
+			email:     "test@example.com",
+			expectedErr: errors.New(`unable to get kdf info: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"
+unable to send request for localhost: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"
+Failed to store token:`),
+			status: []struct {
+				code int
+				body string
+			}{
+				{
+					code: 400,
+					body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+				},
+				{
+					code: 400,
+					body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+				},
 			},
 		},
 	}
@@ -132,8 +173,7 @@ func TestGenkeyCmd(t *testing.T) {
 
 			// Mock transport.DefaultHttpClient.DoWithBackoff function
 			transport.DefaultHttpClient = &MockClient{
-				code: test.status.code,
-				body: test.status.body,
+				responses: test.status,
 			}
 			// Capture log output
 			var buf bytes.Buffer
@@ -152,8 +192,12 @@ func TestGenkeyCmd(t *testing.T) {
 
 			t.Log(buf.String())
 			if test.expectedErr != nil {
-				if buf.String() != test.expectedErr.Error()+"\n" {
-					t.Errorf("Expected log output %q, but got %q", test.expectedErr.Error()+"\n", buf.String())
+				var (
+					expected string = strings.TrimSpace(test.expectedErr.Error())
+					actual   string = strings.TrimSpace(buf.String())
+				)
+				if expected != actual {
+					t.Errorf("Expected log output %q, but got %q", expected, actual)
 				}
 				return
 			}

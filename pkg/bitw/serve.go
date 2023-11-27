@@ -16,6 +16,7 @@
 package bitw
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -239,6 +240,20 @@ func (s *HttpServer) reload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *HttpServer) kdf(w http.ResponseWriter, r *http.Request) {
+	var (
+		kdf []byte
+		err error
+	)
+	if kdf, err = json.Marshal(secrets.KDF); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error": "%q"}`, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%s", kdf)
+}
+
 func (s *HttpServer) ListenAndServe() {
 	var (
 		secrets       map[string]string = config.GetSecretsFromUserEnvOrStore()
@@ -278,6 +293,7 @@ func (s *HttpServer) ListenAndServe() {
 	}
 
 	sm := http.NewServeMux()
+	sm.HandleFunc("/api/v1/kdf", s.kdf)
 	sm.HandleFunc("/api/v1/reload", s.reload)
 	sm.HandleFunc("/api/v1/storetoken", s.storeToken)
 	sm.HandleFunc("/", s.getHttpPath)

@@ -16,36 +16,21 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
 // keyCmd represents the key command
 var keyCmd = &cobra.Command{
 	Use:   "key",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Short: "Key operations",
+	Long: `The key command allows you to manage the API keys granted for use on
+	this server. You can generate a new key, list the current keys, or revoke an
+	existing key.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("key called")
-	},
+	The list key command will only work from the server console. It will not
+	work from a remote client.`,
 }
 
 func init() {
 	rootCmd.AddCommand(keyCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// keyCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// keyCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

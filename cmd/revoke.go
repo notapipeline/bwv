@@ -16,36 +16,85 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
+	"log"
+	"net/http"
+	"net/mail"
 
+	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/transport"
+	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
+)
+
+var (
+	address string
 )
 
 // revokeCmd represents the revoke command
 var revokeCmd = &cobra.Command{
 	Use:   "revoke",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Revoke the token for a given address or cidr block",
+	Long: `This command will revoke the token for a given address or cidr block.
+You must specify either an address or a cidr block. You cannot specify both.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("revoke called")
+		var (
+			password string
+			err      error
+			token    string
+			kdf      types.KDFInfo
+			req      *http.Request
+			ctx      context.Context = context.Background()
+		)
+
+		if _, err = mail.ParseAddress(email); err != nil {
+			fatal("invalid email address %q", err)
+			return
+		}
+
+		if password, err = getPassword(); err != nil {
+			fatal("invalid password %q", err)
+		}
+
+		// TODO: localhost address and port are hardcoded - move to config
+		if err = transport.DefaultHttpClient.Get(ctx, "https://localhost:6278/api/v1/kdf", &kdf); err != nil {
+			fatal("unable to get kdf info: %q", err)
+		}
+
+		if token, err = crypto.ClientEncrypt(password, email, address, kdf); err != nil {
+			fatal("unable to encrypt token: %q", err)
+		}
+
+		// Send to server
+		ctx = context.WithValue(ctx, transport.AuthToken{}, token)
+		if req, err = http.NewRequest("POST", "https://localhost:6278/api/v1/storetoken", nil); err != nil {
+			fatal("unable to create request for %s: %q", address, err)
+		}
+
+		var r struct {
+			Code    int    `json:"statuscode"`
+			Message string `json:"message"`
+		} = struct {
+			Code    int    `json:"statuscode"`
+			Message string `json:"message"`
+		}{}
+
+		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
+			fatal("unable to send request for %s: %q", address, err)
+		}
+
+		if r.Code != 200 {
+			fatal("Failed to store token: %s", r.Message)
+			return
+		}
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(revokeCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// revokeCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// revokeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	keyCmd.AddCommand(revokeCmd)
+	revokeCmd.Flags().StringVarP(&address, "address", "a", "", "IP address or CIDR block to revoke the token for")
+	revokeCmd.Flags().StringVarP(&email, "email", "e", "", "Email address for this key")
+	if err := genkeyCmd.MarkFlagRequired("email"); err != nil {
+		log.Fatal(err)
+	}
 }

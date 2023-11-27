@@ -58,6 +58,24 @@ func DeriveStretchedMasterKey(password []byte, email string, kdf types.KDFInfo) 
 	return StretchKey(key)
 }
 
+func ClientEncrypt(password, salt, what string, kdf types.KDFInfo) (string, error) {
+	var (
+		key, mac []byte
+		err      error
+		t        types.CipherString
+	)
+
+	if key, mac, err = DeriveStretchedMasterKey([]byte(password), salt, kdf); err != nil {
+		return "", fmt.Errorf("unable to stretch master password: %w", err)
+	}
+
+	if t, err = EncryptWith([]byte(what), types.AesCbc256_HmacSha256_B64, key, mac); err != nil {
+		return "", fmt.Errorf("unable to encrypt cipher string: %w", err)
+	}
+
+	return t.String(), nil
+}
+
 func EncryptWith(data []byte, csType types.CipherStringType, key, macKey []byte) (types.CipherString, error) {
 	var (
 		s     types.CipherString = types.CipherString{}

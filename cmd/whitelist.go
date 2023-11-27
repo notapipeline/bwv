@@ -24,28 +24,51 @@ import (
 // whitelistCmd represents the whitelist command
 var whitelistCmd = &cobra.Command{
 	Use:   "whitelist",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Handle whitelisted IP addresses",
+	Long: `Whitelisted IP addresses help protect your secrets by denying access
+	to the API from any IP address not on the whitelist. You can add or remove
+	IP addresses from the whitelist using this command. You can also list the
+	currently whitelisted IP addresses.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("whitelist called")
 	},
 }
 
+var addCommand = &cobra.Command{
+	Use:   "add",
+	Short: "Add an IP address to the whitelist",
+	Long: `Add an IP address to the whitelist. You can specify a single IP address
+	or a CIDR block. If you specify a CIDR block, all addresses in the block
+	will be added to the whitelist.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("add called")
+	},
+}
+
+var removeCommand = &cobra.Command{
+	Use:   "remove",
+	Short: "Remove an IP address from the whitelist",
+	Long: `Remove an IP address from the whitelist. You can specify a single IP address
+	or a CIDR block. If you specify a CIDR block, all addresses in the block
+	will be removed from the whitelist.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("remove called")
+	},
+}
+
+var listCommand = &cobra.Command{
+	Use:   "list",
+	Short: "List the currently whitelisted IP addresses",
+	Long: `List the currently whitelisted IP addresses. The list will be printed
+	to stdout in CIDR notation, one address per line.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("list called")
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(whitelistCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// whitelistCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// whitelistCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	whitelistCmd.AddCommand(addCommand)
+	whitelistCmd.AddCommand(removeCommand)
+	whitelistCmd.AddCommand(listCommand)
 }

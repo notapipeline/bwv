@@ -35,10 +35,10 @@ var pbkdf types.KDFInfo = types.KDFInfo{
 func setupSuite(t *testing.T) func(t *testing.T) {
 	t.Log("Setting up config suite")
 	tempDir := t.TempDir()
-	configPath = func(m ConfigMode) string {
+	ConfigPath = func(m ConfigMode) string {
 		return filepath.Join(tempDir, "server.yaml")
 	}
-	err := os.WriteFile(configPath(ConfigModeServer), []byte(`
+	err := os.WriteFile(ConfigPath(ConfigModeServer), []byte(`
 whitelist:
   - 127.0.0.0/24
 cert: cert.pem
@@ -52,7 +52,7 @@ apikeys:
 	}
 
 	return func(t *testing.T) {
-		configPath = getConfigPath
+		ConfigPath = getConfigPath
 		getSecrets = GetSecretsFromUserEnvOrStore
 		cache.Reset()
 	}
@@ -206,7 +206,7 @@ func TestConfig_Save(t *testing.T) {
 	}
 
 	// Verify the saved config file
-	if data, err = os.ReadFile(configPath(ConfigModeServer)); err != nil {
+	if data, err = os.ReadFile(ConfigPath(ConfigModeServer)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -217,6 +217,7 @@ key: key.pem
 port: 8080
 apikeys:
   example.com: abcdef123456
+token: ""
 `)
 	if string(data) != string(expectedData) {
 		t.Errorf("Expected saved config file:\n%s===\n\nBut got:\n%s===", string(expectedData), string(data))

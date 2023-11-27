@@ -56,7 +56,7 @@ func StopService(serviceName string) error {
 	return nil
 }
 
-func ServiceStatus(serviceName string) (*dbus.UnitStatus, error) {
+func ServiceStatus(serviceName string) (string, error) {
 	var (
 		err      error
 		service  string = fmt.Sprintf("%s.service", serviceName)
@@ -65,7 +65,7 @@ func ServiceStatus(serviceName string) (*dbus.UnitStatus, error) {
 	)
 
 	if statuses, err = systemd.ListUnitsByNamesContext(ctx, []string{service}); err != nil {
-		return nil, fmt.Errorf("Failed to get service status for %s", serviceName)
+		return "", fmt.Errorf("Failed to get service status for %s", serviceName)
 	}
-	return &statuses[0], nil
+	return statuses[0].SubState, nil
 }

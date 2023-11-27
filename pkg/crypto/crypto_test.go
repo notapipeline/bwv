@@ -239,7 +239,7 @@ func TestDecryptWithInvalidMAC(t *testing.T) {
 		t.Errorf("Expected error but got nil")
 	}
 
-	expectedError := "decrypt: MAC mismatch"
+	expectedError := "decrypt: MAC mismatch 6 != 32"
 	if err != nil && err.Error() != expectedError {
 		t.Errorf("Expected error message %q but got %q", expectedError, err.Error())
 	}
@@ -328,3 +328,23 @@ func TestUnpad(t *testing.T) {
 		})
 	}
 }
+
+/*func TestClientEncryptServerDecrypt(t *testing.T) {
+	var (
+		password             string = "password"
+		email                string = "email@example.com"
+		what                 string = "some random hello world string that needs to be encrypted"
+		err                  error
+		encrypted, decrypted string
+	)
+
+	if encrypted, err = ClientEncrypt(password, email, what); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if decrypted, err = ServerDecrypt(password, encrypted); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if decrypted != what {
+		t.Fatalf("Expected %q but got %q", what, decrypted)
+	}
+}*/

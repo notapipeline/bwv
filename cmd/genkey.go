@@ -21,16 +21,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
-	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/twpayne/go-pinentry"
 
-	"github.com/notapipeline/bwv/pkg/bitw"
 	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/transport"
@@ -38,7 +34,6 @@ import (
 )
 
 var addresses []string
-var email string
 
 var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
 	log.Fatalf(format, v...)
@@ -81,11 +76,7 @@ var genkeyCmd = &cobra.Command{
 		var (
 			password string
 			err      error
-			kdf      types.KDFInfo = types.KDFInfo{
-				Type:       types.KDFTypePBKDF2,
-				Iterations: 1,
-			}
-			key, mac []byte
+			kdf      types.KDFInfo
 		)
 		for _, arg := range args {
 			var found bool = false
@@ -97,6 +88,10 @@ var genkeyCmd = &cobra.Command{
 			if !found {
 				addresses = append(addresses, arg)
 			}
+		}
+		type message struct {
+			Code    int    `json:"statuscode"`
+			Message string `json:"message"`
 		}
 
 		if _, err = mail.ParseAddress(email); err != nil {
@@ -112,8 +107,9 @@ var genkeyCmd = &cobra.Command{
 			addresses = append(addresses, "localhost")
 		}
 
-		if key, mac, err = crypto.DeriveStretchedMasterKey([]byte(password), email, kdf); err != nil {
-			fatal("unable to stretch master password: %v", err)
+		var ctx context.Context = context.Background()
+		if err = transport.DefaultHttpClient.Get(ctx, "https://localhost:6278/api/v1/kdf", &kdf); err != nil {
+			fatal("unable to get kdf info: %q", err)
 		}
 
 		for _, address := range addresses {
@@ -122,30 +118,21 @@ var genkeyCmd = &cobra.Command{
 				fatal("unable to create token for %s: %q", address, err)
 			}
 
-			var t types.CipherString
-			{
-				if t, err = crypto.EncryptWith([]byte(token), types.AesCbc256_HmacSha256_B64, key, mac); err != nil {
-					fatal("unable to encrypt token for %s: %q", address, err)
-				}
+			var encrypted string
+			if encrypted, err = crypto.ClientEncrypt(password, email, token, kdf); err != nil {
+				fatal("unable to encrypt token: %q", err)
 			}
-
 			// Send to server
 			var (
 				req *http.Request
 				ctx context.Context = context.Background()
 			)
 
-			ctx = context.WithValue(ctx, transport.AuthToken{}, t.String())
+			ctx = context.WithValue(ctx, transport.AuthToken{}, encrypted)
 			if req, err = http.NewRequest("POST", "https://localhost:6278/api/v1/storetoken", nil); err != nil {
 				fatal("unable to create request for %s: %q", address, err)
 			}
-			var r struct {
-				Code    int    `json:"statuscode"`
-				Message string `json:"message"`
-			} = struct {
-				Code    int    `json:"statuscode"`
-				Message string `json:"message"`
-			}{}
+			var r message
 			if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
 				fatal("unable to send request for %s: %q", address, err)
 			}
@@ -160,55 +147,10 @@ var genkeyCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(genkeyCmd)
+	keyCmd.AddCommand(genkeyCmd)
 	genkeyCmd.Flags().StringSliceVarP(&addresses, "address", "a", []string{}, "IP address or CIDR block for this key")
 	genkeyCmd.Flags().StringVarP(&email, "email", "e", "", "Email address for this key")
 	if err := genkeyCmd.MarkFlagRequired("email"); err != nil {
 		log.Fatal(err)
 	}
-}
-
-var getPassword func() (string, error) = func() (string, error) {
-	return func() (string, error) {
-		var (
-			err         error
-			client      *pinentry.Client
-			password    string
-			usePinentry bool = true
-		)
-
-		if client, err = getPinentry(
-			pinentry.WithBinaryNameFromGnuPGAgentConf(),
-			pinentry.WithDesc("Please enter your Bitwarden master password."),
-			pinentry.WithGPGTTY(),
-			pinentry.WithPrompt("Password:"),
-			pinentry.WithTitle("Master password"),
-		); err != nil {
-			if password, err = readPassword("Please enter your Bitwarden master password: "); err != nil {
-				return "", err
-			}
-			usePinentry = false
-		}
-
-		if usePinentry {
-			defer client.Close()
-			password, _, err = client.GetPIN()
-			if pinentry.IsCancelled(err) {
-				return "", fmt.Errorf("Cancelled")
-			}
-		}
-		if password == "" {
-			return "", fmt.Errorf("No password provided")
-		}
-		password = strings.TrimSpace(password)
-		return password, err
-	}()
-}
-
-var getPinentry func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) = func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
-	return pinentry.NewClient(options...)
-}
-
-var readPassword func(prompt string) (string, error) = func(prompt string) (string, error) {
-	return bitw.ReadPassword(prompt)
 }

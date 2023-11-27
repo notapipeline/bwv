@@ -33,7 +33,7 @@ import (
 // These functions are referenced as variables to enable them to
 // be mocked in tests
 var (
-	configPath func(m ConfigMode) string = getConfigPath
+	ConfigPath func(m ConfigMode) string = getConfigPath
 	getSecrets func() map[string]string  = GetSecretsFromUserEnvOrStore
 )
 
@@ -63,7 +63,7 @@ func New() *Config {
 // The config file will be loaded from ~/.config/bwv/server.yaml
 func (c *Config) Load(m ConfigMode) (err error) {
 	var (
-		cp       string = configPath(ConfigModeServer)
+		cp       string = ConfigPath(ConfigModeServer)
 		yamlFile []byte
 	)
 
@@ -129,7 +129,7 @@ func (c *Config) Save() (err error) {
 		return err
 	}
 
-	var cp string = configPath(ConfigModeServer)
+	var cp string = ConfigPath(ConfigModeServer)
 	if err = os.MkdirAll(filepath.Dir(cp), 0700); err != nil {
 		return err
 	}

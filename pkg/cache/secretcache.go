@@ -165,7 +165,15 @@ func (c *SecretCache) EncryptType(d []byte, t types.CipherStringType) (types.Cip
 
 // Set the master password into MLocked memory
 func (c *SecretCache) setMasterPassword(password, email string) error {
-	mpw := pbkdf2.Key([]byte(password), []byte(email), c.KDF.Iterations, 32, sha256.New)
+	var (
+		mpw []byte
+		err error
+	)
+
+	if mpw, err = crypto.DeriveMasterKey([]byte(password), email, c.KDF); err != nil {
+		return fmt.Errorf("failed to derive master password: %w", err)
+	}
+
 	c.masterpw = make([]byte, len(mpw))
 	if err := mlock(c.masterpw); err != nil {
 		return fmt.Errorf("failed to lock memory for master password: %w", err)
