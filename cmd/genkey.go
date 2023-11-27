@@ -21,14 +21,13 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
 
 	"github.com/spf13/cobra"
 
-	"github.com/notapipeline/bwv/pkg/config"
-	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
@@ -101,6 +100,7 @@ var genkeyCmd = &cobra.Command{
 
 		if password, err = getPassword(); err != nil {
 			fatal("invalid password %q", err)
+			return
 		}
 
 		if len(addresses) == 0 {
@@ -108,19 +108,23 @@ var genkeyCmd = &cobra.Command{
 		}
 
 		var ctx context.Context = context.Background()
-		if err = transport.DefaultHttpClient.Get(ctx, "https://localhost:6278/api/v1/kdf", &kdf); err != nil {
+		var localAddress string = fmt.Sprintf("https://%s:%d", vaultItem.Server, vaultItem.Port)
+		if err = transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
 			fatal("unable to get kdf info: %q", err)
+			return
 		}
 
 		for _, address := range addresses {
 			var token string
-			if token = config.CreateToken(); token == "" {
+			if token = createToken(); token == "" {
 				fatal("unable to create token for %s: %q", address, err)
+				return
 			}
 
 			var encrypted string
-			if encrypted, err = crypto.ClientEncrypt(password, email, token, kdf); err != nil {
+			if encrypted, err = clientEncrypt(password, email, token, kdf); err != nil {
 				fatal("unable to encrypt token: %q", err)
+				return
 			}
 			// Send to server
 			var (
@@ -129,8 +133,9 @@ var genkeyCmd = &cobra.Command{
 			)
 
 			ctx = context.WithValue(ctx, transport.AuthToken{}, encrypted)
-			if req, err = http.NewRequest("POST", "https://localhost:6278/api/v1/storetoken", nil); err != nil {
+			if req, err = http.NewRequest("POST", localAddress+"/api/v1/storetoken", nil); err != nil {
 				fatal("unable to create request for %s: %q", address, err)
+				return
 			}
 			var r message
 			if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {

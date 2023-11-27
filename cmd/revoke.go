@@ -17,11 +17,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"net/mail"
 
-	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
@@ -54,21 +54,25 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 
 		if password, err = getPassword(); err != nil {
 			fatal("invalid password %q", err)
+			return
 		}
 
-		// TODO: localhost address and port are hardcoded - move to config
-		if err = transport.DefaultHttpClient.Get(ctx, "https://localhost:6278/api/v1/kdf", &kdf); err != nil {
+		var localAddress string = fmt.Sprintf("https://%s:%d", vaultItem.Server, vaultItem.Port)
+		if err = transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
 			fatal("unable to get kdf info: %q", err)
+			return
 		}
 
-		if token, err = crypto.ClientEncrypt(password, email, address, kdf); err != nil {
+		if token, err = clientEncrypt(password, email, address, kdf); err != nil {
 			fatal("unable to encrypt token: %q", err)
+			return
 		}
 
 		// Send to server
 		ctx = context.WithValue(ctx, transport.AuthToken{}, token)
-		if req, err = http.NewRequest("POST", "https://localhost:6278/api/v1/storetoken", nil); err != nil {
+		if req, err = http.NewRequest("POST", localAddress+"/api/v1/revoke", nil); err != nil {
 			fatal("unable to create request for %s: %q", address, err)
+			return
 		}
 
 		var r struct {
@@ -81,12 +85,15 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 
 		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
 			fatal("unable to send request for %s: %q", address, err)
+			return
 		}
 
 		if r.Code != 200 {
-			fatal("Failed to store token: %s", r.Message)
+			fatal("Failed to revoke token: %s", r.Message)
 			return
 		}
+
+		log.Printf("Token revoked for address %s", address)
 	},
 }
 

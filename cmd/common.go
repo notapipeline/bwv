@@ -20,10 +20,22 @@ import (
 	"strings"
 
 	"github.com/notapipeline/bwv/pkg/bitw"
+	"github.com/notapipeline/bwv/pkg/config"
+	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/types"
+
 	"github.com/twpayne/go-pinentry"
 )
 
 var email string
+
+var createToken func() string = func() string {
+	return config.CreateToken()
+}
+
+var clientEncrypt = func(password, email, address string, kdf types.KDFInfo) (string, error) {
+	return crypto.ClientEncrypt(password, email, address, kdf)
+}
 
 var getPassword func() (string, error) = func() (string, error) {
 	return func() (string, error) {

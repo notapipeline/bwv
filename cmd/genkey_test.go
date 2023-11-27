@@ -2,12 +2,9 @@ package cmd
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,83 +13,14 @@ import (
 	"github.com/twpayne/go-pinentry"
 )
 
-type MockClient struct {
-	responses []struct {
-		code int
-		body string
-	}
-}
-
-func (m *MockClient) DoWithBackoff(ctx context.Context, req *http.Request, response interface{}) error {
-	return m.Do(context.Background(), req, response)
-}
-
-func (m *MockClient) Do(ctx context.Context, req *http.Request, recv any) error {
-	response := m.responses[0]
-	m.responses = m.responses[1:]
-	switch response.code {
-	case 400, 401, 403, 404, 429, 500, 503:
-		return &transport.ErrUnknown{
-			Code: response.code,
-			Body: []byte(response.body),
-		}
-	}
-	if err := json.Unmarshal([]byte(response.body), recv); err != nil {
-		r := recv.(*struct {
-			Code    int    `json:"statuscode"`
-			Message string `json:"message"`
-		})
-		r.Code = response.code
-		r.Message = response.body
-	}
-	return nil
-
-}
-
-func (m *MockClient) Get(ctx context.Context, urlstr string, recv interface{}) error {
-	return m.DoWithBackoff(context.Background(), nil, recv)
-}
-
-func (m *MockClient) Post(ctx context.Context, urlstr string, recv, send any) error {
-	return m.DoWithBackoff(context.Background(), nil, recv)
-}
-
-type MockProcess struct {
-	value                                   string
-	status                                  bool
-	readlnerr, closeerr, starterr, writeerr error
-	exit                                    int
-	lines                                   []struct {
-		line []byte
-		err  error
-	}
-}
-
-func (m *MockProcess) ReadLine() ([]byte, bool, error) {
-	line := m.lines[0]
-	m.lines = m.lines[1:]
-	return line.line, m.status, line.err
-}
-
-func (m *MockProcess) Start(string, []string) error {
-	return m.starterr
-}
-
-func (m *MockProcess) Close() error {
-	return m.closeerr
-}
-
-func (m *MockProcess) Write([]byte) (int, error) {
-	return m.exit, m.writeerr
-}
-
 func TestGenkeyCmd(t *testing.T) {
 	tests := []struct {
 		name        string
 		addresses   []string
 		email       string
 		expectedErr error
-		status      []struct {
+		getPassword func() (string, error)
+		responses   []struct {
 			code int
 			body string
 		}
@@ -104,7 +32,10 @@ func TestGenkeyCmd(t *testing.T) {
 			},
 			email:       "test@example.com",
 			expectedErr: nil,
-			status: []struct {
+			getPassword: func() (string, error) {
+				return "password", nil
+			},
+			responses: []struct {
 				code int
 				body string
 			}{
@@ -119,11 +50,14 @@ func TestGenkeyCmd(t *testing.T) {
 			},
 		},
 		{
-			name:        "no email",
-			addresses:   []string{"localhost"},
-			email:       "",
+			name:      "no email",
+			addresses: []string{"localhost"},
+			email:     "",
+			getPassword: func() (string, error) {
+				return "", nil
+			},
 			expectedErr: errors.New("invalid email address \"mail: no address\""),
-			status: []struct {
+			responses: []struct {
 				code int
 				body string
 			}{
@@ -141,10 +75,11 @@ func TestGenkeyCmd(t *testing.T) {
 			name:      "rate limited",
 			addresses: []string{"localhost"},
 			email:     "test@example.com",
-			expectedErr: errors.New(`unable to get kdf info: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"
-unable to send request for localhost: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"
-Failed to store token:`),
-			status: []struct {
+			getPassword: func() (string, error) {
+				return "", nil
+			},
+			expectedErr: errors.New(`unable to get kdf info: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"`),
+			responses: []struct {
 				code int
 				body string
 			}{
@@ -166,14 +101,12 @@ Failed to store token:`),
 			defer func() {
 				getPassword = opwd
 			}()
-			getPassword = func() (string, error) {
-				return "password", nil
-			}
+			getPassword = test.getPassword
 			email = test.email
 
 			// Mock transport.DefaultHttpClient.DoWithBackoff function
-			transport.DefaultHttpClient = &MockClient{
-				responses: test.status,
+			transport.DefaultHttpClient = &MockHttpClient{
+				responses: test.responses,
 			}
 			// Capture log output
 			var buf bytes.Buffer
