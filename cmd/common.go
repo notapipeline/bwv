@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/notapipeline/bwv/pkg/bitw"
 	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/types"
 
 	"github.com/twpayne/go-pinentry"
@@ -79,5 +79,5 @@ var getPinentry func(options ...pinentry.ClientOption) (c *pinentry.Client, err 
 }
 
 var readPassword func(prompt string) (string, error) = func(prompt string) (string, error) {
-	return bitw.ReadPassword(prompt)
+	return tools.ReadPassword(prompt)
 }

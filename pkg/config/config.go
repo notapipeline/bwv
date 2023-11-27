@@ -26,6 +26,7 @@ import (
 
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/types"
 	"gopkg.in/yaml.v2"
 )
@@ -34,7 +35,7 @@ import (
 // be mocked in tests
 var (
 	ConfigPath func(m ConfigMode) string = getConfigPath
-	getSecrets func() map[string]string  = GetSecretsFromUserEnvOrStore
+	getSecrets func() map[string]string  = tools.GetSecretsFromUserEnvOrStore
 )
 
 type Config struct {
@@ -141,7 +142,7 @@ func getConfigPath(m ConfigMode) string {
 	if m == ConfigModeClient {
 		return fmt.Sprintf("%s/.config/bwv/client.yaml", home)
 	}
-	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
+	return fmt.Sprintf("%s/.config/bwv/server.yaml", home)
 }
 
 func (c *Config) RevokeApiKey(what string) (string, error) {

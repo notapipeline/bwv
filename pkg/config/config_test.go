@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/notapipeline/bwv/pkg/cache"
+	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
@@ -53,7 +54,7 @@ apikeys:
 
 	return func(t *testing.T) {
 		ConfigPath = getConfigPath
-		getSecrets = GetSecretsFromUserEnvOrStore
+		getSecrets = tools.GetSecretsFromUserEnvOrStore
 		cache.Reset()
 	}
 }

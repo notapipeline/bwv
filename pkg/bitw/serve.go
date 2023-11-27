@@ -27,6 +27,7 @@ import (
 
 	"github.com/hokaccha/go-prettyjson"
 	"github.com/notapipeline/bwv/pkg/config"
+	"github.com/notapipeline/bwv/pkg/tools"
 )
 
 const DefaultPort = 6278
@@ -256,7 +257,7 @@ func (s *HttpServer) kdf(w http.ResponseWriter, r *http.Request) {
 
 func (s *HttpServer) ListenAndServe() {
 	var (
-		secrets       map[string]string = config.GetSecretsFromUserEnvOrStore()
+		secrets       map[string]string = tools.GetSecretsFromUserEnvOrStore()
 		listener      net.Listener
 		err           error
 		port          int = DefaultPort

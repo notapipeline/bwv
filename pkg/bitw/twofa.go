@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/notapipeline/bwv/pkg/tools"
 )
 
 type TwoFactorProvider int
@@ -70,7 +72,7 @@ func twoFactorPrompt(resp *twoFactorResponse) (TwoFactorProvider, string, error)
 			available = append(available, pv)
 			fmt.Fprintf(os.Stderr, "%d) %s\n", len(available), pv.Line(extra))
 		}
-		input, err := ReadLine(fmt.Sprintf("Select a two-factor auth provider [1-%d]", len(available)))
+		input, err := tools.ReadLine(fmt.Sprintf("Select a two-factor auth provider [1-%d]", len(available)))
 		if err != nil {
 			return -1, "", err
 		}
@@ -83,7 +85,7 @@ func twoFactorPrompt(resp *twoFactorResponse) (TwoFactorProvider, string, error)
 		}
 		selected = available[i-1]
 	}
-	token, err := ReadLine(selected.Line(resp.TwoFactorProviders2[selected]))
+	token, err := tools.ReadLine(selected.Line(resp.TwoFactorProviders2[selected]))
 	if err != nil {
 		return -1, "", err
 	}

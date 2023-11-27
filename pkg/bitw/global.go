@@ -205,3 +205,12 @@ func DecryptToken(token string) (string, error) {
 
 	return config.DeriveHttpGetAPIKey(string(decrypted)), nil
 }
+
+func syncStore(loginResponse *LoginResponse) {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, transport.AuthToken{}, loginResponse.AccessToken)
+	if err := Sync(ctx); err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Sync complete")
+}

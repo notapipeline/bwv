@@ -13,14 +13,11 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package bitw
+package tools
 
 import (
-	"context"
-	"log"
 	"os"
 
-	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/peterh/liner"
 )
 
@@ -60,11 +57,56 @@ func ReadLine(prompt string) (string, error) {
 	return password, nil
 }
 
-func syncStore(loginResponse *LoginResponse) {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, transport.AuthToken{}, loginResponse.AccessToken)
-	if err := Sync(ctx); err != nil {
-		log.Fatal(err)
+func getSecret(what string) string {
+	var (
+		value string
+		err   error
+	)
+
+	if value, err = getSecretFromKWallet(what); err == nil {
+		return value
 	}
-	log.Println("Sync complete")
+
+	if value, err = getSecretFromSecretsService(what); err == nil {
+		return value
+	}
+	return ""
+}
+
+// Order is:
+// 1. Environment
+// 2. Secrets store
+// 3. User input
+func GetSecretsFromUserEnvOrStore() map[string]string {
+	secrets := map[string]string{
+		"BW_CLIENTID":     "",
+		"BW_CLIENTSECRET": "",
+		"BW_PASSWORD":     "",
+		"BW_EMAIL":        "",
+	}
+
+	for k := range secrets {
+		// Default comes from environment
+		var value string = os.Getenv(k)
+		if value == "" {
+			// If not in environment, try to get from secrets store
+			value = getSecret(k)
+		}
+
+		switch k {
+		case "BW_PASSWORD", "BW_EMAIL":
+			if value == "" {
+				value, _ = ReadLine(k + ": ")
+			}
+		}
+		secrets[k] = value
+	}
+	return secrets
+}
+
+func GetFromUser() map[string]string {
+	secrets := make(map[string]string)
+	secrets["BW_EMAIL"], _ = ReadLine("Email: ")
+	secrets["BW_PASSWORD"], _ = ReadPassword("Password: ")
+	return secrets
 }
