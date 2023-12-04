@@ -34,10 +34,6 @@ import (
 
 var addresses []string
 
-var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
-	log.Fatalf(format, v...)
-}
-
 // genkeyCmd represents the genkey command
 var genkeyCmd = &cobra.Command{
 	Use:   "genkey",

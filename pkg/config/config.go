@@ -24,11 +24,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/caarlos0/env/v10"
+	"gopkg.in/yaml.v2"
+
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/types"
-	"gopkg.in/yaml.v2"
 )
 
 // These functions are referenced as variables to enable them to
@@ -39,12 +41,11 @@ var (
 )
 
 type Config struct {
-	Whitelist []string          `yaml:"whitelist"`
-	Cert      string            `yaml:"cert"`
-	Key       string            `yaml:"key"`
-	Port      int               `yaml:"port"`
-	ApiKeys   map[string]string `yaml:"apikeys"`
-	Token     string            `yaml:"token"`
+	Server types.ServeCmd `yaml:"server"`
+
+	Address string `yaml:"address" env:"BW_ADDRESS"`
+	Port    int    `yaml:"port" env:"BW_PORT"`
+	Token   string `yaml:"token" env:"BW_TOKEN"`
 }
 
 type ConfigMode int
@@ -61,10 +62,25 @@ func New() *Config {
 
 // Load the config file from user local config directory
 //
-// The config file will be loaded from ~/.config/bwv/server.yaml
+// The config file will be loaded from ~/.config/bwv/server.yaml if it exists
+// and then the environment will be checked for overrides.
+//
+// Users are expected to call one of `MergeServerConfig` or `MergeClientConfig`
+// to override the config with command line options.
 func (c *Config) Load(m ConfigMode) (err error) {
+	if err = c.loadYaml(m); err != nil {
+		return
+	}
+	if err = c.loadEnv(); err != nil {
+		return
+	}
+
+	return
+}
+
+func (c *Config) loadYaml(m ConfigMode) (err error) {
 	var (
-		cp       string = ConfigPath(ConfigModeServer)
+		cp       string = ConfigPath(m)
 		yamlFile []byte
 	)
 
@@ -79,8 +95,59 @@ func (c *Config) Load(m ConfigMode) (err error) {
 	return yaml.Unmarshal(yamlFile, c)
 }
 
+func (c *Config) loadEnv() (err error) {
+	return env.Parse(c)
+}
+
+func (c *Config) MergeClientConfig(cmd types.ClientCmd) {
+	if cmd.Server != "" {
+		c.Address = cmd.Server
+	}
+	if cmd.Port != 0 {
+		c.Port = cmd.Port
+	}
+	if cmd.Token != "" {
+		c.Token = cmd.Token
+	}
+}
+
+func (c *Config) MergeServerConfig(cmd types.ServeCmd) {
+	if len(cmd.Whitelist) > 0 {
+		c.Server.Whitelist = cmd.Whitelist
+	}
+	if len(cmd.ApiKeys) > 0 {
+		for k, v := range cmd.ApiKeys {
+			c.Server.ApiKeys[k] = v
+		}
+	}
+	if cmd.Cert != "" {
+		c.Server.Cert = cmd.Cert
+	}
+	if cmd.Key != "" {
+		c.Server.Key = cmd.Key
+	}
+	if cmd.Port != 0 {
+		c.Server.Port = cmd.Port
+	}
+	if cmd.Org != "" {
+		c.Server.Org = cmd.Org
+	}
+	if cmd.Collection != "" {
+		c.Server.Collection = cmd.Collection
+	}
+	if cmd.Debug {
+		c.Server.Debug = cmd.Debug
+	}
+	if cmd.Quiet {
+		c.Server.Quiet = cmd.Quiet
+	}
+	if cmd.SkipVerify {
+		c.Server.SkipVerify = cmd.SkipVerify
+	}
+}
+
 func (c *Config) IsSecure() (secure bool) {
-	if c.Cert != "" && c.Key != "" {
+	if c.Server.Cert != "" && c.Server.Key != "" {
 		secure = true
 	}
 	return
@@ -115,16 +182,22 @@ func (c *Config) AddApiKey(hostOrCidr string) (string, error) {
 		token string = CreateToken()
 		key          = DeriveHttpGetAPIKey(token)
 	)
-	c.ApiKeys[hostOrCidr] = key
+
+	if c.Server.ApiKeys == nil {
+		c.Server.ApiKeys = make(map[string]string)
+	}
+	c.Server.ApiKeys[hostOrCidr] = key
 
 	var err error = c.Save()
 	return token, err
 }
 
 func (c *Config) Save() (err error) {
-	if len(c.Whitelist) == 0 {
-		c.Whitelist = append(c.Whitelist, "127.0.0.0/24")
+	// Localhost address must always be whitelisted
+	if len(c.Server.Whitelist) == 0 {
+		c.Server.Whitelist = append(c.Server.Whitelist, "127.0.0.0/24")
 	}
+
 	var data []byte
 	if data, err = yaml.Marshal(c); err != nil {
 		return err
@@ -142,7 +215,7 @@ func getConfigPath(m ConfigMode) string {
 	if m == ConfigModeClient {
 		return fmt.Sprintf("%s/.config/bwv/client.yaml", home)
 	}
-	return fmt.Sprintf("%s/.config/bwv/server.yaml", home)
+	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
 }
 
 func (c *Config) RevokeApiKey(what string) (string, error) {
@@ -153,20 +226,20 @@ func (c *Config) RevokeApiKey(what string) (string, error) {
 		err         error
 	)
 
-	for host, key := range c.ApiKeys {
+	for host, key := range c.Server.ApiKeys {
 		if host == what || key == derivedWhat {
 			revokedHost = host
 			continue
 		}
 		keys[host] = key
 	}
-	c.ApiKeys = keys
+	c.Server.ApiKeys = keys
 	err = c.Save()
 	return revokedHost, err
 }
 
 func (c *Config) CheckApiKey(addr, key string) bool {
-	if addr == "127.0.0.1" || ContainsIp("127.0.0.1/24", addr) {
+	if addr == "127.0.0.1" || tools.ContainsIp("127.0.0.1/24", addr) {
 		secrets := getSecrets()
 		if key == secrets["BW_CLIENTSECRET"] || key == secrets["BW_PASSWORD"] {
 			return true
@@ -175,8 +248,8 @@ func (c *Config) CheckApiKey(addr, key string) bool {
 
 	// encrypt the token for comparison
 	key = DeriveHttpGetAPIKey(key)
-	for ip, k := range c.ApiKeys {
-		if k == key && (ip == addr || ContainsIp(ip, addr)) {
+	for ip, k := range c.Server.ApiKeys {
+		if k == key && (ip == addr || tools.ContainsIp(ip, addr)) {
 			return true
 		}
 	}

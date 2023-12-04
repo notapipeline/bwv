@@ -83,7 +83,17 @@ func Reset() {
 
 // MasterPassword returns the master password used to unlock the secret cache.
 func MasterPassword() []byte {
+	if secretCache == nil {
+		return nil
+	}
 	return secretCache.masterpw
+}
+
+func UserKey() ([]byte, []byte) {
+	if secretCache == nil {
+		return nil, nil
+	}
+	return secretCache.key, secretCache.macKey
 }
 
 func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
@@ -124,8 +134,8 @@ func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
 	return
 }
 
-func (c *SecretCache) Update(data types.DataFile) (err error) {
-	c.Data = &data
+func (c *SecretCache) Update(data *types.DataFile) (err error) {
+	c.Data = data
 	err = c.Unlock(data.Sync.Profile.Key)
 	return
 }

@@ -16,6 +16,8 @@
 package types
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -132,14 +134,60 @@ type SecureNote struct {
 	Type SecureNoteType
 }
 
-type DataFile struct {
-	DeviceID      string
-	AccessToken   string
-	RefreshToken  string
-	TokenExpiry   time.Time
-	KDF           int
-	KDFIterations int
+type UserDecryptionOptions struct {
+	HasMasterPassword bool
+	Object            string
+}
 
-	LastSync time.Time
-	Sync     SyncData
+type MasterPasswordPolicy map[string]interface{}
+
+type LoginResponse struct {
+	KDFInfo
+	MasterPasswordPolicy *MasterPasswordPolicy
+
+	ForcePasswordReset    bool
+	Key                   CipherString
+	PrivateKey            CipherString
+	ResetMasterPassword   bool
+	TwoFactorToken        string
+	UserDecryptionOptions *UserDecryptionOptions
+
+	AccessToken  string `json:"access_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+type DataFile struct {
+	LoginResponse *LoginResponse
+	DeviceID      string
+	KDF           KDFInfo
+	LastSync      time.Time
+	Sync          SyncData
+}
+
+type TwoFactorProvider int
+
+func (t *TwoFactorProvider) UnmarshalText(text []byte) error {
+	i, err := strconv.Atoi(string(text))
+	if err != nil || i < 0 || i >= TwoFactorProviderMax {
+		return fmt.Errorf("invalid two-factor auth provider: %q", text)
+	}
+	*t = TwoFactorProvider(i)
+	return nil
+}
+
+func (t TwoFactorProvider) Line(extra map[string]interface{}) string {
+	switch t {
+	case Authenticator:
+		return "Six-digit authenticator token: "
+	case Email:
+		emailHint := extra["Email"].(string)
+		return fmt.Sprintf("Six-digit email token (%s): ", emailHint)
+	}
+	return fmt.Sprintf("unsupported two factor auth provider %d", t)
+}
+
+type SecretResponse struct {
+	Message interface{} `json:"message"`
 }

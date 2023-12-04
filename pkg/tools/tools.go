@@ -73,6 +73,8 @@ func getSecret(what string) string {
 	return ""
 }
 
+// GetSecretsFromUserEnvOrStore gets secrets from the user, environment or secrets store
+//
 // Order is:
 // 1. Environment
 // 2. Secrets store
@@ -104,6 +106,11 @@ func GetSecretsFromUserEnvOrStore() map[string]string {
 	return secrets
 }
 
+// GetFromUser gets secrets from the user [deprecated]
+//
+// In this instance, only the email and password are required
+// as this method will be used for MFA authentication and not
+// for API authentication.
 func GetFromUser() map[string]string {
 	secrets := make(map[string]string)
 	secrets["BW_EMAIL"], _ = ReadLine("Email: ")

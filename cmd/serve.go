@@ -17,22 +17,11 @@ package cmd
 
 import (
 	"github.com/notapipeline/bwv/pkg/bitw"
+	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
 )
 
-type Serve struct {
-	Whitelist  []string
-	APIKeys    []string
-	Cert       string
-	Key        string
-	Port       int
-	Org        string
-	Collection string
-	Debug      bool
-	Quiet      bool
-}
-
-var serve Serve = Serve{}
+var serve types.ServeCmd = types.ServeCmd{}
 
 // serveCmd represents the serve command
 var serveCmd = &cobra.Command{
@@ -68,12 +57,14 @@ var serveCmd = &cobra.Command{
 	the default collection.
 
 	If no flags are specified, the server will look for a configuration file
-	at ~/.config/bwv/config.json. If the file exists at this location, it will
-	be created with default values.`,
+	at ~/.config/bwv/server.yaml. If no file exists at this location, it will
+	be created with default values or using values from the environment.`,
 
 	Run: func(cmd *cobra.Command, args []string) {
 		server := bitw.NewHttpServer()
-		server.ListenAndServe()
+		if err := server.ListenAndServe(serve); err != nil {
+			panic(err)
+		}
 	},
 }
 
@@ -81,10 +72,12 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 
 	serveCmd.Flags().StringSliceVarP(&serve.Whitelist, "whitelist", "w", []string{}, "Comma-separated list of IP addresses or CIDR blocks to whitelist")
-	serveCmd.Flags().StringSliceVarP(&serve.APIKeys, "api-keys", "k", []string{}, "Comma-separated list of hostnames and API keys to require")
+	serveCmd.Flags().StringToStringVarP(&serve.ApiKeys, "api-keys", "k", map[string]string{}, "Comma-separated list of `hostname=token` to require")
+
 	serveCmd.Flags().StringVarP(&serve.Cert, "cert", "c", "", "Path to TLS certificate")
 	serveCmd.Flags().StringVarP(&serve.Key, "key", "K", "", "Path to TLS key")
-	serveCmd.Flags().IntVarP(&serve.Port, "port", "p", 6277, "Port to listen on")
+
+	serveCmd.Flags().IntVarP(&serve.Port, "port", "p", bitw.DefaultPort, "Port to listen on")
 	serveCmd.Flags().StringVarP(&serve.Org, "org", "o", "", "Bitwarden organization to use")
 	serveCmd.Flags().StringVarP(&serve.Collection, "collection", "C", "", "Bitwarden collection to use")
 	serveCmd.Flags().BoolVarP(&serve.Debug, "debug", "d", false, "Enable debug logging")

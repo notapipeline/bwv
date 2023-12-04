@@ -16,11 +16,20 @@
 package bitw
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/notapipeline/bwv/pkg/cache"
+	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
@@ -35,6 +44,9 @@ type DecryptedCipher struct {
 
 	Username string `json:"username"`
 	Password string `json:"password"`
+
+	// attachments will be sent b64encoded
+	Attachments map[string]string `json:"attachments"`
 }
 
 func (d *DecryptedCipher) Get(what string) (value interface{}) {
@@ -72,6 +84,9 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 	var fieldsMutex = sync.Mutex{}
 	d.Fields = make(map[string]string)
 
+	var attachmentsMutex = sync.Mutex{}
+	d.Attachments = make(map[string]string)
+
 	if c.Login != nil {
 		d.Username, _ = secrets.DecryptStr(c.Login.Username)
 		d.Password, _ = secrets.DecryptStr(c.Login.Password)
@@ -89,6 +104,114 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 			fieldsMutex.Unlock()
 		}(f)
 	}
+
+	for _, a := range c.Attachments {
+		wg.Add(1)
+		go func(a types.Attachment) {
+			defer wg.Done()
+			name, _ := secrets.DecryptStr(*a.FileName)
+			var (
+				size       int
+				err        error
+				value      []byte
+				attachment *types.Attachment
+			)
+
+			if attachment, err = GetAttachmentLocation(c.ID.String(), a); err != nil {
+				log.Println(err)
+				return
+			}
+
+			if size, err = strconv.Atoi(attachment.Size); err != nil {
+				log.Println(err)
+				return
+			}
+
+			if value, _ = DecryptUrl(attachment, size); err != nil {
+				log.Println(err)
+				return
+			}
+			attachmentsMutex.Lock()
+			d.Attachments[name] = base64.StdEncoding.EncodeToString(value)
+			attachmentsMutex.Unlock()
+		}(a)
+	}
 	wg.Wait()
 	return d
+}
+
+func GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, error) {
+	var (
+		apiurl     string = Endpoint.ApiServer + "/ciphers/" + c + "/attachment/" + a.ID
+		req        *http.Request
+		err        error
+		ctx        context.Context = context.Background()
+		attachment types.Attachment
+	)
+
+	// First query the API to get the real location of the attachment
+	if req, err = http.NewRequest("GET", apiurl, nil); err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+secrets.Data.LoginResponse.AccessToken)
+	log.Println("sending request to", apiurl)
+	if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &attachment); err != nil {
+		log.Println("error sending request to", apiurl, err)
+		if _, ok := err.(*json.UnmarshalTypeError); !ok {
+			return nil, err
+		}
+
+		if _, ok := err.(*transport.ErrNotFound); !ok {
+			// fall back to the original attachment and fail from there
+			return &a, err
+		}
+	}
+	return &attachment, nil
+}
+
+func DecryptUrl(attachment *types.Attachment, expectedSize int) ([]byte, error) {
+	var (
+		msg              types.SecretResponse
+		decrypted, data  []byte
+		err              error
+		req              *http.Request
+		ctx              context.Context = context.Background()
+		userKey, userMac []byte          = cache.UserKey()
+		key, mac         []byte
+	)
+
+	if req, err = http.NewRequest("GET", attachment.URL, nil); err != nil {
+		return nil, err
+	}
+	req.Header.Set("cache-control", "no-cache")
+
+	log.Println("sending request to", attachment.URL)
+	if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &msg); err != nil {
+		log.Println("error sending request to", attachment.URL, err)
+		return nil, err
+	}
+
+	if data, err = base64.StdEncoding.DecodeString(msg.Message.(string)); err != nil {
+		return nil, err
+	}
+
+	if len(data) != expectedSize {
+		log.Printf("received %d bytes from %s expected %d\n", len(data), attachment.URL, expectedSize)
+		return nil, err
+	}
+
+	if key, err = crypto.DecryptWith(*attachment.Key, userKey, userMac); err != nil {
+		log.Println("error decrypting", attachment.URL, err)
+		return nil, err
+	}
+
+	mac = key[32:]
+	key = key[:32]
+
+	if decrypted, err = crypto.DecryptAes(data, key, mac); err != nil {
+		log.Println("error decrypting", attachment.URL, err)
+		return nil, err
+	}
+	return decrypted, nil
 }

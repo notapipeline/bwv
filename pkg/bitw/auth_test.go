@@ -27,6 +27,7 @@ import (
 )
 
 func TestPrelogin(t *testing.T) {
+	defer setupSuite(t)(t)
 	// Mock the HTTP client
 	transport.DefaultHttpClient = MockPreloginSuccessHttpClient{}
 
@@ -42,7 +43,7 @@ func TestPrelogin(t *testing.T) {
 	expectedHashedPassword := "0GA3u/K3oddElx6cM1ztGEz4RI97+wBWflDkI4CRfsE="
 
 	// Call the Prelogin function
-	hashedPassword, err := Prelogin("password", "test@example.com")
+	hashedPassword, err := prelogin("password", "test@example.com")
 
 	// Verify the result
 	if err != nil {
@@ -55,6 +56,7 @@ func TestPrelogin(t *testing.T) {
 }
 
 func TestPreloginFailsOnCreateSecretCache(t *testing.T) {
+	defer setupSuite(t)(t)
 	// Mock the HTTP client
 	transport.DefaultHttpClient = MockPreloginSuccessHttpClient{}
 
@@ -64,7 +66,7 @@ func TestPreloginFailsOnCreateSecretCache(t *testing.T) {
 	}
 
 	// Call the Prelogin function
-	_, err := Prelogin("password", "test@example.com")
+	_, err := prelogin("password", "test@example.com")
 
 	// Verify the result
 	if err == nil {
@@ -73,6 +75,7 @@ func TestPreloginFailsOnCreateSecretCache(t *testing.T) {
 }
 
 func TestPreFailsOnPostlogin(t *testing.T) {
+	defer setupSuite(t)(t)
 	// Mock the HTTP client
 	transport.DefaultHttpClient = MockPreloginPostFailureHttpClient{}
 
@@ -84,7 +87,7 @@ func TestPreFailsOnPostlogin(t *testing.T) {
 	}
 
 	// Call the Prelogin function
-	_, err := Prelogin("password", "test@example.com")
+	_, err := prelogin("password", "test@example.com")
 
 	// Verify the result
 	if err == nil {

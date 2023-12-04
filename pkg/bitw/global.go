@@ -26,6 +26,7 @@ import (
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
@@ -41,6 +42,7 @@ const (
 	CHUNKSIZE int      = 5
 	EU        Location = "eu"
 	GLOBAL    Location = "com"
+	DURATION           = 15
 )
 
 var (
@@ -57,7 +59,36 @@ var (
 	}
 	//temporary until config is finished
 	Endpoint *Server = servers[GLOBAL]
+
+	// The login response from the server
+	loginResponse *types.LoginResponse
 )
+
+func setup() {
+	var (
+		err        error
+		secrets    map[string]string = tools.GetSecretsFromUserEnvOrStore()
+		hashed     string
+		useApiKeys bool = secrets["BW_CLIENTID"] != "" && secrets["BW_CLIENTSECRET"] != ""
+	)
+
+	if useApiKeys {
+		if loginResponse, err = ApiLogin(secrets); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		if hashed, err = prelogin(secrets["BW_PASSWORD"], secrets["BW_EMAIL"]); err != nil {
+			log.Fatal(err)
+		}
+
+		if loginResponse, err = UserLogin(hashed, secrets["BW_EMAIL"]); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	log.Println("Syncing...")
+	syncStore(loginResponse)
+}
 
 // SetRegion allows the regional endpoints to be set for API calls
 func SetRegion(region Location) {
@@ -97,7 +128,7 @@ func chunkSplitCiphers(slice []types.Secret, size int) [][]types.Secret {
 }
 
 // GetFolder returns the uuid of the folder that matches the path
-func GetFolder(path string) uuid.UUID {
+func getFolder(path string) uuid.UUID {
 	var folders [][]types.Folder = chunkSplitFolders(secrets.Data.Sync.Folders, CHUNKSIZE)
 	var uuidchan = make(chan uuid.UUID, 1)
 
@@ -139,8 +170,10 @@ func Get(path string) ([]DecryptedCipher, bool) {
 		decrypted     []DecryptedCipher    = make([]DecryptedCipher, 0)
 	)
 
-	if folder != "." {
-		fid = GetFolder(folder)
+	switch folder {
+	case ".", "*":
+	default:
+		fid = getFolder(folder)
 	}
 
 	var wg sync.WaitGroup
@@ -163,24 +196,17 @@ func Get(path string) ([]DecryptedCipher, bool) {
 		}(chunk, folder, entry, fid)
 	}
 
-	wg.Wait()
-	close(decryptedchan)
+	go func() {
+		wg.Wait()
+		log.Println("Closing decryption channel")
+		close(decryptedchan)
+	}()
 
 	for dc := range decryptedchan {
 		decrypted = append(decrypted, dc)
 	}
+	log.Println("Found", len(decrypted), "items")
 	return decrypted, len(decrypted) > 0
-}
-
-func Sync(ctx context.Context) error {
-	var data types.DataFile
-	if err := transport.DefaultHttpClient.Get(ctx, Endpoint.ApiServer+"/sync", &data.Sync); err != nil {
-		return fmt.Errorf("could not sync: %v", err)
-	}
-	if err := secrets.Update(data); err != nil {
-		return fmt.Errorf("could not update secrets: %v", err)
-	}
-	return nil
 }
 
 func DecryptToken(token string) (string, error) {
@@ -206,11 +232,26 @@ func DecryptToken(token string) (string, error) {
 	return config.DeriveHttpGetAPIKey(string(decrypted)), nil
 }
 
-func syncStore(loginResponse *LoginResponse) {
+func syncStore(loginResponse *types.LoginResponse) {
+	data := &types.DataFile{
+		LoginResponse: loginResponse,
+		DeviceID:      "bwv",
+		KDF:           loginResponse.KDFInfo,
+	}
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, transport.AuthToken{}, loginResponse.AccessToken)
-	if err := Sync(ctx); err != nil {
+	if err := Sync(ctx, data); err != nil {
 		log.Fatal(err)
 	}
 	log.Println("Sync complete")
+}
+
+func Sync(ctx context.Context, data *types.DataFile) error {
+	if err := transport.DefaultHttpClient.Get(ctx, Endpoint.ApiServer+"/sync", &data.Sync); err != nil {
+		return fmt.Errorf("could not sync: %v", err)
+	}
+	if err := secrets.Update(data); err != nil {
+		return fmt.Errorf("could not update secrets: %v", err)
+	}
+	return nil
 }

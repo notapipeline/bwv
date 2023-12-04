@@ -13,4 +13,20 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package config
+package crypto
+
+import (
+	"crypto/cipher"
+	"hash"
+	"io"
+
+	"github.com/notapipeline/bwv/pkg/types"
+)
+
+type CryptoMock struct {
+	PbkdfKey     func(password []byte, salt []byte, iter int, keyLen int, hashFunc func() hash.Hash) []byte
+	Argon2ID     func(password, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte
+	HkdfExpand   func(hash func() hash.Hash, pseudorandomKey []byte, info []byte) io.Reader
+	Unmarshal    func(cs types.CipherString, text []byte) (types.CipherString, error)
+	NewAesCipher func(key []byte) (cipher.Block, error)
+}

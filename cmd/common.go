@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/notapipeline/bwv/pkg/config"
@@ -28,6 +29,10 @@ import (
 )
 
 var email string
+
+var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
+	log.Fatalf(format, v...)
+}
 
 var createToken func() string = func() string {
 	return config.CreateToken()

@@ -1,3 +1,18 @@
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package cmd
 
 import (
@@ -20,10 +35,7 @@ func TestRevokeCmd(t *testing.T) {
 		kdf         types.KDFInfo
 		expectedErr error
 		getPassword func() (string, error)
-		responses   []struct {
-			code int
-			body string
-		}
+		responses   []transport.MockHttpResponse
 	}{
 		{
 			name:        "test successful revoke",
@@ -34,17 +46,14 @@ func TestRevokeCmd(t *testing.T) {
 			getPassword: func() (string, error) {
 				return "password", nil
 			},
-			responses: []struct {
-				code int
-				body string
-			}{
+			responses: []transport.MockHttpResponse{
 				{
-					code: 200,
-					body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
+					Code: 200,
+					Body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
 				},
 				{
-					code: 200,
-					body: `{"statuscode": 200, "message":"Token revoked for address 127.0.0.1"}`,
+					Code: 200,
+					Body: `{"statuscode": 200, "message":"Token revoked for address 127.0.0.1"}`,
 				},
 			},
 		},
@@ -57,17 +66,14 @@ func TestRevokeCmd(t *testing.T) {
 			getPassword: func() (string, error) {
 				return "password", nil
 			},
-			responses: []struct {
-				code int
-				body string
-			}{
+			responses: []transport.MockHttpResponse{
 				{
-					code: 200,
-					body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
+					Code: 200,
+					Body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
 				},
 				{
-					code: 0,
-					body: "",
+					Code: 0,
+					Body: "",
 				},
 			},
 		},
@@ -80,17 +86,14 @@ func TestRevokeCmd(t *testing.T) {
 			getPassword: func() (string, error) {
 				return "", errors.New("invalid password")
 			},
-			responses: []struct {
-				code int
-				body string
-			}{
+			responses: []transport.MockHttpResponse{
 				{
-					code: 200,
-					body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
+					Code: 200,
+					Body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
 				},
 				{
-					code: 0,
-					body: "",
+					Code: 0,
+					Body: "",
 				},
 			},
 		},
@@ -101,18 +104,19 @@ func TestRevokeCmd(t *testing.T) {
 			getPassword: func() (string, error) {
 				return "", nil
 			},
-			expectedErr: errors.New(`unable to get kdf info: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"`),
-			responses: []struct {
-				code int
-				body string
-			}{
+			expectedErr: errors.New(`unable to get kdf info: "Bad Request: ` +
+				`{\"message\":\"Traffic from your network looks unusual. ` +
+				`Connect to a different network or try again later. [Error Code 6]\"}"`),
+			responses: []transport.MockHttpResponse{
 				{
-					code: 400,
-					body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+					Code: 400,
+					Body: `{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`,
 				},
 				{
-					code: 400,
-					body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+					Code: 400,
+					Body: `{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`,
 				},
 			},
 		},
@@ -128,8 +132,8 @@ func TestRevokeCmd(t *testing.T) {
 			email = test.email
 			address = test.address
 			// Mock HTTP client
-			transport.DefaultHttpClient = &MockHttpClient{
-				responses: test.responses,
+			transport.DefaultHttpClient = &transport.MockHttpClient{
+				Responses: test.responses,
 			}
 
 			var buf bytes.Buffer
@@ -154,8 +158,9 @@ func TestRevokeCmd(t *testing.T) {
 				}
 				return
 			}
-			if !strings.Contains(buf.String(), "Token revoked for address 127.0.0.1") {
-				t.Errorf("Expected log output to contain %q, but got %q", "Token revoked for address 127.0.0.1", buf.String())
+			var msg string = "Token revoked for address 127.0.0.1"
+			if !strings.Contains(buf.String(), msg) {
+				t.Errorf("Expected log output to contain %q, but got %q", msg, buf.String())
 			}
 		})
 	}

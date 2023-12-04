@@ -15,14 +15,16 @@
  */
 package types
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type MissingTypeError struct {
 	Value []byte
 }
 
 func (e MissingTypeError) Error() string {
-	return fmt.Sprintf("cipher string does not contain a type: %q", e.Value)
+	return fmt.Sprintf("cipher string does not contain type: %q", e.Value)
 }
 
 type InvalidTypeError struct {
@@ -38,7 +40,16 @@ type UnsupportedTypeError struct {
 }
 
 func (e UnsupportedTypeError) Error() string {
-	return fmt.Sprintf("unsupported cipher string type: %d", e.Value)
+	return fmt.Sprintf("unsupported cipher string type or key length: %d", e.Value)
+}
+
+type InvalidKeyLengthError struct {
+	Value int
+	Type  CipherStringType
+}
+
+func (e InvalidKeyLengthError) Error() string {
+	return fmt.Sprintf("invalid key length: %d for key type %s", e.Value, e.Type.String())
 }
 
 type InvalidMACError struct {

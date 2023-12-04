@@ -1,3 +1,18 @@
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package cmd
 
 import (
@@ -20,10 +35,7 @@ func TestGenkeyCmd(t *testing.T) {
 		email       string
 		expectedErr error
 		getPassword func() (string, error)
-		responses   []struct {
-			code int
-			body string
-		}
+		responses   []transport.MockHttpResponse
 	}{
 		{
 			name: "no addresses assumes localhost",
@@ -35,17 +47,14 @@ func TestGenkeyCmd(t *testing.T) {
 			getPassword: func() (string, error) {
 				return "password", nil
 			},
-			responses: []struct {
-				code int
-				body string
-			}{
+			responses: []transport.MockHttpResponse{
 				{
-					code: 200,
-					body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
+					Code: 200,
+					Body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
 				},
 				{
-					code: 200,
-					body: `{"statuscode": 200, "message":"stored token for address localhost"}`,
+					Code: 200,
+					Body: `{"statuscode": 200, "message":"stored token for address localhost"}`,
 				},
 			},
 		},
@@ -57,17 +66,14 @@ func TestGenkeyCmd(t *testing.T) {
 				return "", nil
 			},
 			expectedErr: errors.New("invalid email address \"mail: no address\""),
-			responses: []struct {
-				code int
-				body string
-			}{
+			responses: []transport.MockHttpResponse{
 				{
-					code: 200,
-					body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
+					Code: 200,
+					Body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
 				},
 				{
-					code: 0,
-					body: "",
+					Code: 0,
+					Body: "",
 				},
 			},
 		},
@@ -78,18 +84,19 @@ func TestGenkeyCmd(t *testing.T) {
 			getPassword: func() (string, error) {
 				return "", nil
 			},
-			expectedErr: errors.New(`unable to get kdf info: "Bad Request: {\"message\":\"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]\"}"`),
-			responses: []struct {
-				code int
-				body string
-			}{
+			expectedErr: errors.New(`unable to get kdf info: "Bad Request: ` +
+				`{\"message\":\"Traffic from your network looks unusual. ` +
+				`Connect to a different network or try again later. [Error Code 6]\"}"`),
+			responses: []transport.MockHttpResponse{
 				{
-					code: 400,
-					body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+					Code: 400,
+					Body: `{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`,
 				},
 				{
-					code: 400,
-					body: `{"message":"Traffic from your network looks unusual. Connect to a different network or try again later. [Error Code 6]"}`,
+					Code: 400,
+					Body: `{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`,
 				},
 			},
 		},
@@ -105,8 +112,8 @@ func TestGenkeyCmd(t *testing.T) {
 			email = test.email
 
 			// Mock transport.DefaultHttpClient.DoWithBackoff function
-			transport.DefaultHttpClient = &MockHttpClient{
-				responses: test.responses,
+			transport.DefaultHttpClient = &transport.MockHttpClient{
+				Responses: test.responses,
 			}
 			// Capture log output
 			var buf bytes.Buffer

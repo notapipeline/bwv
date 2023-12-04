@@ -1,65 +1,27 @@
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package cmd
 
-import (
-	"context"
-	"encoding/json"
-	"net/http"
-
-	"github.com/notapipeline/bwv/pkg/transport"
-)
-
-// MockHttpClient is a mock implementation of the HttpClient interface
-// Useful for testing requests throughout the application
-type MockHttpClient struct {
-	responses []struct {
-		code int
-		body string
-	}
-}
-
-func (m *MockHttpClient) DoWithBackoff(ctx context.Context, req *http.Request, response interface{}) error {
-	return m.Do(context.Background(), req, response)
-}
-
-func (m *MockHttpClient) Do(ctx context.Context, req *http.Request, recv any) error {
-	if len(m.responses) == 0 {
-		return nil
-	}
-	response := m.responses[0]
-	m.responses = m.responses[1:]
-	switch response.code {
-	case 400, 401, 403, 404, 429, 500, 503:
-		return &transport.ErrUnknown{
-			Code: response.code,
-			Body: []byte(response.body),
-		}
-	}
-	if err := json.Unmarshal([]byte(response.body), recv); err != nil {
-		r := recv.(*struct {
-			Code    int    `json:"statuscode"`
-			Message string `json:"message"`
-		})
-		r.Code = response.code
-		r.Message = response.body
-	}
-	return nil
-
-}
-
-func (m *MockHttpClient) Get(ctx context.Context, urlstr string, recv interface{}) error {
-	return m.DoWithBackoff(context.Background(), nil, recv)
-}
-
-func (m *MockHttpClient) Post(ctx context.Context, urlstr string, recv, send any) error {
-	return m.DoWithBackoff(context.Background(), nil, recv)
-}
-
 type MockProcess struct {
-	value                                   string
-	status                                  bool
-	readlnerr, closeerr, starterr, writeerr error
-	exit                                    int
-	lines                                   []struct {
+	value               string
+	status              bool
+	readlnerr, closeerr error
+	starterr, writeerr  error
+	exit                int
+	lines               []struct {
 		line []byte
 		err  error
 	}

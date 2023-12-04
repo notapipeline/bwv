@@ -16,26 +16,37 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 
+	"github.com/hokaccha/go-prettyjson"
 	"github.com/notapipeline/bwv/pkg/config"
+	"github.com/notapipeline/bwv/pkg/transport"
+	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
 )
 
 type VaultItem struct {
-	Path       string
-	Fields     []string
-	Parameters []string
-	Token      string
-	Server     string
-	Port       int
-	Cert       string
-	Key        string
-	SkipVerify bool
+	Path        string
+	Fields      []string
+	Parameters  []string
+	Attachments []string
+	Notes       []string
+	SecureNotes []string
+	Token       string
+	Server      string
+	Port        int
+	Cert        string
+	Key         string
+	SkipVerify  bool
 }
 
 var vaultItem VaultItem = VaultItem{}
+var clientCmd types.ClientCmd = types.ClientCmd{}
 
 var cfgFile string
 
@@ -55,7 +66,6 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		if len(os.Args[1:]) == 0 {
 			return cmd.Help()
 		}
-		//log.SetOutput(io.Discard)
 		if vaultItem.Token == "" {
 			if err := loadClientConfig(); err != nil {
 				return err
@@ -65,6 +75,44 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		if vaultItem.Path == "" {
 			return fmt.Errorf("No path specified")
 		}
+
+		// Send to server
+		var (
+			req     *http.Request
+			ctx     context.Context = context.Background()
+			err     error
+			address string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			fields  string = "fields=" + strings.Join(vaultItem.Fields, ",")
+			props   string = "properties=" + strings.Join(vaultItem.Parameters, ",")
+		)
+
+		ctx = context.WithValue(ctx, transport.AuthToken{}, vaultItem.Token)
+		if req, err = http.NewRequest("GET", address+"/"+vaultItem.Path+"?"+fields+"&"+props, nil); err != nil {
+			fatal("unable to create request for %s: %q", address, err)
+			return nil
+		}
+
+		var r types.SecretResponse
+		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
+			fatal("unable to send request for %s: %q", address, err)
+		}
+
+		var b []byte
+		if b, err = json.Marshal(r.Message); err != nil {
+			return err
+		}
+
+		formatter := prettyjson.Formatter{
+			DisabledColor:   true,
+			Indent:          4,
+			Newline:         "\n",
+			StringMaxLength: 0,
+		}
+
+		if b, err = formatter.Format(b); err != nil {
+			return err
+		}
+		fmt.Printf("%s\n", b)
 		return nil
 	},
 }
@@ -137,15 +185,18 @@ func Execute() {
 }
 
 func init() {
+	// These are conistent across all commands
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/bwv/client.yaml)")
-	rootCmd.PersistentFlags().StringVar(&vaultItem.Server, "server", "", "address of the server (default is localhost)")
-	rootCmd.PersistentFlags().IntVar(&vaultItem.Port, "port", 6277, "port of the server (default is 6277)")
-	rootCmd.PersistentFlags().StringVar(&vaultItem.Cert, "cert", "", "path to the server certificate")
-	rootCmd.PersistentFlags().StringVar(&vaultItem.Key, "key", "", "path to the server key")
+	rootCmd.PersistentFlags().StringVar(&clientCmd.Server, "server", "", "address of the server (default is localhost)")
+	rootCmd.PersistentFlags().IntVar(&clientCmd.Port, "port", 6277, "port of the server (default is 6277)")
 	rootCmd.PersistentFlags().BoolVar(&vaultItem.SkipVerify, "skip-verify", false, "skip verification of the server certificate")
 
+	// these are for the client
 	rootCmd.Flags().StringSliceVarP(&vaultItem.Fields, "fields", "f", []string{}, "Retrieve the field(s) from a vault item (may be specified multiple times)")
 	rootCmd.Flags().StringSliceVarP(&vaultItem.Parameters, "params", "p", []string{}, "Retrieve the parameter(s) from a vault item (may be specified multiple times)")
+	rootCmd.Flags().StringSliceVarP(&vaultItem.Attachments, "attachments", "a", []string{}, "Retrieve the attachment(s) from a vault item (may be specified multiple times)")
+	rootCmd.Flags().StringSliceVarP(&vaultItem.Notes, "notes", "n", []string{}, "Retrieve the note(s) from a vault item (may be specified multiple times)")
+	rootCmd.Flags().StringSliceVarP(&vaultItem.SecureNotes, "secure-notes", "s", []string{}, "Retrieve the secure note(s) from a vault item (may be specified multiple times)")
 	rootCmd.Flags().StringVarP(&vaultItem.Path, "path", "P", "", "Path to the vault item")
 	rootCmd.Flags().StringVarP(&vaultItem.Token, "token", "t", "", "Token for accessing the server")
 }

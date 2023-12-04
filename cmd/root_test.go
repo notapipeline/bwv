@@ -1,3 +1,18 @@
+/*
+ *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 package cmd
 
 import (
@@ -60,7 +75,8 @@ func TestRootCmdThrowsErrorOnMissingClientConfig(t *testing.T) {
 	}
 
 	// Verify that the output contains the expected string
-	expectedOutput := "Error: stat /this/path/to/bwv/client/config/will/never/exist/client.yaml: no such file or director"
+	expectedOutput := "Error: stat /this/path/to/bwv/client/config/will/" +
+		"never/exist/client.yaml: no such file or director"
 	actualOutput := buf.String()
 	if !strings.Contains(actualOutput, expectedOutput) {
 		t.Fatalf("Expected output to contain %q but got %q", expectedOutput, buf.String())
@@ -143,10 +159,17 @@ func TestRootCmdRewriteArguments(t *testing.T) {
 	rootCmd.SetOutput(buf)
 
 	// Execute the root command
-	os.Args = []string{"bwv", "--config", "config", "--server", "localhost", "--port", "6278", "--key", "/etc/ssl/key.pem", "--cert", "/etc/ssl/cert.pem", "-t", "token", "hello/world", "-f", "field1,field2", "-p", "param1", "-p", "param2", "--skip-verify"}
+	os.Args = []string{"bwv", "--config", "config", "--server", "localhost",
+		"--port", "6278", "-t", "token", "hello/world", "-f", "field1,field2",
+		"-p", "param1", "-p", "param2", "--skip-verify",
+	}
 	Execute()
 	t.Log(os.Args)
-	if !reflect.DeepEqual(os.Args, []string{"bwv", "--config", "config", "--server", "localhost", "--port", "6278", "--key", "/etc/ssl/key.pem", "--cert", "/etc/ssl/cert.pem", "-t", "token", "-P", "hello/world", "-f", "field1,field2", "-p", "param1", "-p", "param2", "--skip-verify"}) {
+	if !reflect.DeepEqual(os.Args, []string{"bwv", "--config", "config",
+		"--server", "localhost", "--port", "6278", "-t", "token",
+		"-P", "hello/world", "-f", "field1,field2", "-p", "param1",
+		"-p", "param2", "--skip-verify",
+	}) {
 		t.Fatalf("Expected arguments to be rewritten, got %q", os.Args)
 	}
 

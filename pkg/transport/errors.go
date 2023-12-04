@@ -18,6 +18,8 @@ package transport
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/notapipeline/bwv/pkg/types"
 )
 
 type MaliciousTrafficError struct{}
@@ -27,20 +29,31 @@ func (e *MaliciousTrafficError) Error() string {
 		"Connect to a different network or try again later."
 }
 
+type ErrorModel struct {
+	Message string
+	Object  string
+}
+
+// {"error":"invalid_grant","error_description":"Two factor required.","TwoFactorProviders":["0"],"TwoFactorProviders2":{"0":null},"MasterPasswordPolicy":null}
+// {"error":"invalid_grant","error_description":"invalid_username_or_password","ErrorModel":{"Message":"Two-step token is invalid. Try again.","Object":"error"}}...
+type TwoFactorRequiredError struct {
+	Err                  string `json:"error"`
+	ErrorDescription     string `json:"error_description"`
+	ErrorModel           *ErrorModel
+	TwoFactorProviders   []string
+	TwoFactorProviders2  map[types.TwoFactorProvider]map[string]interface{}
+	MasterPasswordPolicy interface{}
+}
+
+func (e *TwoFactorRequiredError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Err, e.ErrorDescription)
+}
+
 // {"message":"Slow down! Too many requests. Try again in 1m.","validationErrors":null,"exceptionMessage":null,"exceptionStackTrace":null,"innerExceptionMessage":null,"object":"error"}
 type RateLimitError struct{}
 
 func (e *RateLimitError) Error() string {
 	return "Slow down! Too many requests. Try again in 1m."
-}
-
-type ErrStatusCode struct {
-	Code int
-	Body []byte
-}
-
-func (e *ErrStatusCode) Error() string {
-	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrInvalidStatusCode struct {
@@ -51,64 +64,60 @@ func (e *ErrInvalidStatusCode) Error() string {
 	return fmt.Sprintf("Invalid status code %d", e.Code)
 }
 
-type ErrBadRequest struct {
+type ErrBase struct {
 	Code int
 	Body []byte
 }
+
+type ErrStatusCode ErrBase
+
+func (e *ErrStatusCode) Error() string {
+	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
+}
+
+type ErrBadRequest ErrBase
 
 func (e *ErrBadRequest) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
-type ErrUnauthorized struct {
-	Code int
-	Body []byte
-}
+type ErrUnauthorized ErrBase
 
 func (e *ErrUnauthorized) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
-type ErrForbidden struct {
-	Code int
-	Body []byte
-}
+type ErrForbidden ErrBase
 
 func (e *ErrForbidden) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
-type ErrNotFound struct {
-	Code int
-	Body []byte
-}
+type ErrNotFound ErrBase
 
 func (e *ErrNotFound) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
-type ErrConflict struct {
-	Code int
-	Body []byte
-}
+type ErrConflict ErrBase
 
 func (e *ErrConflict) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
-type ErrInternal struct {
-	Code int
-	Body []byte
+type ErrTooManyRequests ErrBase
+
+func (e *ErrTooManyRequests) Error() string {
+	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
+
+type ErrInternal ErrBase
 
 func (e *ErrInternal) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
-type ErrUnknown struct {
-	Code int
-	Body []byte
-}
+type ErrUnknown ErrBase
 
 func (e *ErrUnknown) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)

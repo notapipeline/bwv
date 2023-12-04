@@ -41,6 +41,18 @@ func (t CipherStringType) Atoi(b []byte) (CipherStringType, error) {
 	return CipherStringType(v), err
 }
 
+func (t CipherStringType) String() string {
+	switch t {
+	case AesCbc256_B64:
+		return "AesCbc256_B64"
+	case AesCbc128_HmacSha256_B64:
+		return "AesCbc128_HmacSha256_B64"
+	case AesCbc256_HmacSha256_B64:
+		return "AesCbc256_HmacSha256_B64"
+	}
+	return fmt.Sprintf("CipherStringType(%d)", t)
+}
+
 func (s CipherString) IsZero() bool {
 	return s.Type == 0 && s.IV == nil && s.CT == nil && s.MAC == nil
 }

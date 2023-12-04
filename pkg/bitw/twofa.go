@@ -8,49 +8,12 @@ import (
 	"strconv"
 
 	"github.com/notapipeline/bwv/pkg/tools"
+	"github.com/notapipeline/bwv/pkg/transport"
+	"github.com/notapipeline/bwv/pkg/types"
 )
 
-type TwoFactorProvider int
-
-// Enum values copied from https://github.com/bitwarden/server/blob/f311f40d9333442a727eb8b77f3859597de199da/src/Core/Enums/TwoFactorProviderType.cs.
-// Do not use iota, to clarify that these integer values are defined elsewhere.
-const (
-	Authenticator         TwoFactorProvider = 0
-	Email                 TwoFactorProvider = 1
-	Duo                   TwoFactorProvider = 2
-	YubiKey               TwoFactorProvider = 3
-	U2f                   TwoFactorProvider = 4
-	Remember              TwoFactorProvider = 5
-	OrganizationDuo       TwoFactorProvider = 6
-	_TwoFactorProviderMax                   = 7
-)
-
-func (t *TwoFactorProvider) UnmarshalText(text []byte) error {
-	i, err := strconv.Atoi(string(text))
-	if err != nil || i < 0 || i >= _TwoFactorProviderMax {
-		return fmt.Errorf("invalid two-factor auth provider: %q", text)
-	}
-	*t = TwoFactorProvider(i)
-	return nil
-}
-
-func (t TwoFactorProvider) Line(extra map[string]interface{}) string {
-	switch t {
-	case Authenticator:
-		return "Six-digit authenticator token: "
-	case Email:
-		emailHint := extra["Email"].(string)
-		return fmt.Sprintf("Six-digit email token (%s): ", emailHint)
-	}
-	return fmt.Sprintf("unsupported two factor auth provider %d", t)
-}
-
-type twoFactorResponse struct {
-	TwoFactorProviders2 map[TwoFactorProvider]map[string]interface{}
-}
-
-func twoFactorPrompt(resp *twoFactorResponse) (TwoFactorProvider, string, error) {
-	var selected TwoFactorProvider
+func twoFactorPrompt(resp *transport.TwoFactorRequiredError) (types.TwoFactorProvider, string, error) {
+	var selected types.TwoFactorProvider
 	switch len(resp.TwoFactorProviders2) {
 	case 0:
 		return -1, "", fmt.Errorf("API requested 2fa but has no available providers")
@@ -63,8 +26,8 @@ func twoFactorPrompt(resp *twoFactorResponse) (TwoFactorProvider, string, error)
 	default:
 		// List all available providers, and make the user choose.
 		// Don't range over the map directly, as the order wouldn't be stable.
-		var available []TwoFactorProvider
-		for pv := TwoFactorProvider(0); pv < _TwoFactorProviderMax; pv++ {
+		var available []types.TwoFactorProvider
+		for pv := types.TwoFactorProvider(0); pv < types.TwoFactorProviderMax; pv++ {
 			extra, ok := resp.TwoFactorProviders2[pv]
 			if !ok {
 				continue

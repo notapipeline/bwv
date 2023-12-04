@@ -25,10 +25,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
 	backoff "github.com/cenkalti/backoff/v4"
+	"github.com/notapipeline/bwv/pkg/types"
 )
 
 // AuthToken is a container for the authentication token that is used to
@@ -73,10 +75,11 @@ func (c *client) Post(ctx context.Context, urlstr string, recv, send any) error 
 		}
 		reader = buffer
 	}
-	request, err = http.NewRequest("POST", urlstr, reader)
-	if err != nil {
+
+	if request, err = http.NewRequest("POST", urlstr, reader); err != nil {
 		return err
 	}
+
 	request.Header.Set("Content-Type", contentType)
 	if authEmail != "" {
 		// For login requests, the upstream bitwarden server wants an extra header.
@@ -101,18 +104,18 @@ func (c *client) Get(ctx context.Context, urlstr string, recv interface{}) error
 // recv object. If the request fails, it will retry with exponential backoff.
 func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv interface{}) error {
 	var (
-		testInitialInterval     = 500 * time.Millisecond
-		testRandomizationFactor = 0.1
-		testMultiplier          = 2.0
-		testMaxInterval         = 5 * time.Second
-		testMaxElapsedTime      = 15 * time.Minute
+		initialInterval     = 500 * time.Millisecond
+		randomizationFactor = 0.1
+		multiplier          = 2.0
+		maxInterval         = 5 * time.Second
+		maxElapsedTime      = 15 * time.Minute
 	)
 	exp := backoff.NewExponentialBackOff()
-	exp.InitialInterval = testInitialInterval
-	exp.RandomizationFactor = testRandomizationFactor
-	exp.Multiplier = testMultiplier
-	exp.MaxInterval = testMaxInterval
-	exp.MaxElapsedTime = testMaxElapsedTime
+	exp.InitialInterval = initialInterval
+	exp.RandomizationFactor = randomizationFactor
+	exp.Multiplier = multiplier
+	exp.MaxInterval = maxInterval
+	exp.MaxElapsedTime = maxElapsedTime
 
 	exp.Reset()
 	f := func() error {
@@ -155,35 +158,59 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 	}
 
 	switch response.StatusCode {
-	case 200:
+	case http.StatusOK:
 		break
-	case 400:
+	case http.StatusBadRequest:
+		if bytes.Contains(body, []byte("TwoFactor")) || bytes.Contains(body, []byte("Two-step")) {
+			var tfa TwoFactorRequiredError
+			if err = json.Unmarshal(body, &tfa); err == nil {
+				return &backoff.PermanentError{
+					Err: &tfa,
+				}
+			}
+		}
+
 		return &backoff.PermanentError{
 			Err: &ErrBadRequest{response.StatusCode, body},
 		}
-	case 401:
+	case http.StatusUnauthorized:
 		return &backoff.PermanentError{
 			Err: &ErrUnauthorized{response.StatusCode, body},
 		}
-	case 403:
+	case http.StatusForbidden:
 		return &backoff.PermanentError{
 			Err: &ErrForbidden{response.StatusCode, body},
 		}
-	case 404:
+	case http.StatusNotFound:
 		return &backoff.PermanentError{
 			Err: &ErrNotFound{response.StatusCode, body},
 		}
-	case 409:
+	case http.StatusConflict:
 		return &backoff.PermanentError{
 			Err: &ErrConflict{response.StatusCode, body},
 		}
-	case 500:
+	case http.StatusTooManyRequests:
+		return &ErrTooManyRequests{response.StatusCode, body}
+	case http.StatusInternalServerError:
 		return &ErrInternal{response.StatusCode, body}
 	default:
 		return &ErrUnknown{response.StatusCode, body}
 
 	}
 
-	err = json.Unmarshal(body, recv)
+	if err = json.Unmarshal(body, recv); err != nil {
+		// JSON can't decode attachments as they aren't in JSON format.
+		// therefore we're normally passing in a SecretResponse object.
+		if secretResponse, ok := recv.(*types.SecretResponse); ok {
+			secretResponse.Message = base64.StdEncoding.EncodeToString(body)
+			recv = secretResponse //nolint:golint,ineffassign
+			return nil
+		}
+
+		// for anything else, return the error
+		err = &backoff.PermanentError{Err: &json.UnmarshalTypeError{
+			Value: "body", Type: reflect.TypeOf(recv)},
+		}
+	}
 	return err
 }

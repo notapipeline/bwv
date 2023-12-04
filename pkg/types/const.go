@@ -41,3 +41,14 @@ const (
 	WITH_MAC    = 3
 	WITHOUT_MAC = 2
 )
+
+const (
+	Authenticator        TwoFactorProvider = 0
+	Email                TwoFactorProvider = 1
+	Duo                  TwoFactorProvider = 2
+	YubiKey              TwoFactorProvider = 3
+	U2f                  TwoFactorProvider = 4
+	Remember             TwoFactorProvider = 5
+	OrganizationDuo      TwoFactorProvider = 6
+	TwoFactorProviderMax                   = 7
+)

@@ -40,13 +40,14 @@ func setupSuite(t *testing.T) func(t *testing.T) {
 		return filepath.Join(tempDir, "server.yaml")
 	}
 	err := os.WriteFile(ConfigPath(ConfigModeServer), []byte(`
-whitelist:
-  - 127.0.0.0/24
-cert: cert.pem
-key: key.pem
-port: 8080
-apikeys:
-  example.com: abcdef123456
+server:
+  whitelist:
+    - 127.0.0.0/24
+  cert: cert.pem
+  key: key.pem
+  port: 8080
+  apikeys:
+    example.com: abcdef123456
 `), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -71,37 +72,37 @@ func TestConfig_Load(t *testing.T) {
 
 	// Verify the loaded values
 	expectedWhitelist := []string{"127.0.0.0/24"}
-	if len(c.Whitelist) != len(expectedWhitelist) {
-		t.Errorf("Expected whitelist length %d but got %d", len(expectedWhitelist), len(c.Whitelist))
+	if len(c.Server.Whitelist) != len(expectedWhitelist) {
+		t.Errorf("Expected whitelist length %d but got %d", len(expectedWhitelist), len(c.Server.Whitelist))
 	}
 
-	for i, ip := range c.Whitelist {
+	for i, ip := range c.Server.Whitelist {
 		if ip != expectedWhitelist[i] {
 			t.Errorf("Expected whitelist IP %q but got %q", expectedWhitelist[i], ip)
 		}
 	}
 
 	expectedCert := "cert.pem"
-	if c.Cert != expectedCert {
-		t.Errorf("Expected cert %q but got %q", expectedCert, c.Cert)
+	if c.Server.Cert != expectedCert {
+		t.Errorf("Expected cert %q but got %q", expectedCert, c.Server.Cert)
 	}
 
 	expectedKey := "key.pem"
-	if c.Key != expectedKey {
-		t.Errorf("Expected key %q but got %q", expectedKey, c.Key)
+	if c.Server.Key != expectedKey {
+		t.Errorf("Expected key %q but got %q", expectedKey, c.Server.Key)
 	}
 
 	expectedPort := 8080
-	if c.Port != expectedPort {
-		t.Errorf("Expected port %d but got %d", expectedPort, c.Port)
+	if c.Server.Port != expectedPort {
+		t.Errorf("Expected port %d but got %d", expectedPort, c.Server.Port)
 	}
 
 	expectedAPIKeys := map[string]string{"example.com": "abcdef123456"}
-	if len(c.ApiKeys) != len(expectedAPIKeys) {
-		t.Errorf("Expected API keys length %d but got %d", len(expectedAPIKeys), len(c.ApiKeys))
+	if len(c.Server.ApiKeys) != len(expectedAPIKeys) {
+		t.Errorf("Expected API keys length %d but got %d", len(expectedAPIKeys), len(c.Server.ApiKeys))
 	}
 
-	for host, key := range c.ApiKeys {
+	for host, key := range c.Server.ApiKeys {
 		if expectedAPIKeys[host] != key {
 			t.Errorf("Expected API key %q for host %q but got %q", expectedAPIKeys[host], host, key)
 		}
@@ -109,17 +110,17 @@ func TestConfig_Load(t *testing.T) {
 }
 
 func TestConfig_IsSecure(t *testing.T) {
-	c := &Config{}
+	c := New()
 	if c.IsSecure() {
 		t.Error("Expected IsSecure to return false when cert and key are empty")
 	}
 
-	c.Cert = "cert.pem"
+	c.Server.Cert = "cert.pem"
 	if c.IsSecure() {
 		t.Error("Expected IsSecure to return false when key is empty")
 	}
 
-	c.Key = "key.pem"
+	c.Server.Key = "key.pem"
 	if !c.IsSecure() {
 		t.Error("Expected IsSecure to return true when cert and key are not empty")
 	}
@@ -147,9 +148,9 @@ func TestConfig_AddApiKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	c := New()
 	var (
-		c          *Config = New()
-		hostOrCidr string  = "example.com"
+		hostOrCidr string = "example.com"
 		key        string
 		ok         bool
 		err        error
@@ -164,7 +165,7 @@ func TestConfig_AddApiKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if key, ok = c.ApiKeys[hostOrCidr]; !ok {
+	if key, ok = c.Server.ApiKeys[hostOrCidr]; !ok {
 		t.Errorf("Expected API key for host %q to be added", hostOrCidr)
 	}
 
@@ -186,8 +187,8 @@ func TestConfig_Save(t *testing.T) {
 	}
 
 	// Create a new config
+	c := New()
 	var (
-		c    *Config = New()
 		err  error
 		data []byte
 	)
@@ -196,10 +197,10 @@ func TestConfig_Save(t *testing.T) {
 		t.Errorf("Expected nil error but got %v", err)
 	}
 
-	c.Cert = "cert.pem"
-	c.Key = "key.pem"
-	c.Port = 8080
-	c.ApiKeys = map[string]string{"example.com": "abcdef123456"}
+	c.Server.Cert = "cert.pem"
+	c.Server.Key = "key.pem"
+	c.Server.Port = 8080
+	c.Server.ApiKeys = map[string]string{"example.com": "abcdef123456"}
 
 	// Save the config
 	if err = c.Save(); err != nil {
@@ -211,13 +212,21 @@ func TestConfig_Save(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expectedData := []byte(`whitelist:
-- 127.0.0.0/24
-cert: cert.pem
-key: key.pem
-port: 8080
-apikeys:
-  example.com: abcdef123456
+	expectedData := []byte(`server:
+  whitelist:
+  - 127.0.0.0/24
+  cert: cert.pem
+  key: key.pem
+  port: 8080
+  apikeys:
+    example.com: abcdef123456
+  org: ""
+  collection: ""
+  skipverify: false
+  debug: false
+  quiet: false
+address: ""
+port: 0
 token: ""
 `)
 	if string(data) != string(expectedData) {
@@ -257,7 +266,7 @@ func TestConfig_RevokeApiKey(t *testing.T) {
 	if revokedHost != hostOrCidr {
 		t.Errorf("Expected revoked host %q but got %q", hostOrCidr, revokedHost)
 	}
-	if _, ok := c.ApiKeys[hostOrCidr]; ok {
+	if _, ok := c.Server.ApiKeys[hostOrCidr]; ok {
 		t.Errorf("Expected API key for host %q to be revoked", hostOrCidr)
 	}
 }
