@@ -284,8 +284,6 @@ func (a *Autoloader) getKeygrips(fingerprint string) (kg []string, err error) {
 		return
 	}
 
-	printBuffers(&stdout, &stderr)
-
 	for _, line := range strings.Split(stdout.String(), "\n") {
 		if strings.HasPrefix(line, "grp") {
 			kg = append(kg, strings.Split(line, ":")[9])
@@ -318,7 +316,7 @@ func unlockKeys(kg string, passphrase []byte) error {
 		printBuffers(&stdout, &stderr)
 		return fmt.Errorf("failed to set passphrase: %w", err)
 	}
-	printBuffers(&stdout, &stderr)
+
 	return nil
 }
 
