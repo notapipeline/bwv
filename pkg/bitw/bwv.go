@@ -32,8 +32,10 @@ import (
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
+// Location identifies the servers to use for API calls
 type Location string
 
+// Server is a container for the API and Identity servers
 type Server struct {
 	ApiServer string
 	IdtServer string
@@ -45,6 +47,8 @@ const (
 	GLOBAL    Location = "com"
 )
 
+// Bwv coordinates the interaction between the Bitwarden API and the local
+// cache.
 type Bwv struct {
 	Secrets  *cache.SecretCache
 	Endpoint *Server
@@ -54,6 +58,7 @@ type Bwv struct {
 	autoload *chan bool
 }
 
+// NewBwv creates a new Bwv object
 func NewBwv() *Bwv {
 	b := Bwv{}
 	b.servers = map[Location]*Server{
@@ -132,6 +137,13 @@ func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 	return decrypted, len(decrypted) > 0
 }
 
+// CreateToken generates a random string that can be used as a bearer token
+// for operations passed from clients connecting remotely. These tokens are not
+// used for clients running on the same host as the server as these are expected
+// to use either the Bitwarden API key or the user's master password.
+//
+// When running onm the same host as the server, the should be expected to
+// retrieve variables from either libsecret or kwallet, or from the environment.
 func (b *Bwv) CreateToken() string {
 	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
 	r := make([]rune, 32)
@@ -176,10 +188,13 @@ func (b *Bwv) Sync() (err error) {
 	return
 }
 
+// salt is used to salt the master password when encrypting the hashed password
+// for storage in the secret cache.
 func (b *Bwv) salt() string {
 	return fmt.Sprintf("__PROTECTED__%s%s", b.Secrets.Data.Sync.Profile.ID, types.UserAutoKey)
 }
 
+// Setup the Bitwarden client
 func (b *Bwv) Setup() *Bwv {
 	var (
 		err        error
@@ -303,6 +318,8 @@ func (b *Bwv) refresh(active, done chan bool, firstRun bool) {
 	}
 }
 
+// chunkSplitFolders splits the number of folders contained in the vault into
+// smaller chunks to allow for parallel processing.
 func (b *Bwv) chunkSplitFolders(slice []types.Folder, size int) [][]types.Folder {
 	var chunks [][]types.Folder
 
@@ -319,6 +336,8 @@ func (b *Bwv) chunkSplitFolders(slice []types.Folder, size int) [][]types.Folder
 	return chunks
 }
 
+// chunkSplitCiphers splits the number of ciphers contained in the vault into
+// smaller chunks to allow for parallel processing.
 func (b *Bwv) chunkSplitCiphers(slice []types.Secret, size int) [][]types.Secret {
 	var chunks [][]types.Secret
 
