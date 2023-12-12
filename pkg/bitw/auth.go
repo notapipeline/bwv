@@ -161,19 +161,3 @@ func (b *Bwv) prelogin(password, email string) (hashed string, err error) {
 	b.Secrets.KDF = preLogin
 	return b.Secrets.HashPassword(password), nil
 }
-
-// Refresh login auth
-func (b *Bwv) Refresh(ctx context.Context, lr *types.LoginResponse) error {
-	log.Println("executing refresh")
-	var refresh types.LoginResponse
-	if err := transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &refresh, urlValues(
-		"grant_type", "refresh_token",
-		"refresh_token", lr.RefreshToken,
-		"scope", "api offline_access",
-		"client_id", "browser",
-	)); err != nil {
-		return fmt.Errorf("Could not refresh login: %w", err)
-	}
-	*lr = refresh
-	return nil
-}
