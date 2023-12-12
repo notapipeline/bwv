@@ -6,6 +6,7 @@ package unix
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -16,6 +17,12 @@ import (
 	"strings"
 
 	"github.com/notapipeline/bwv/pkg/bitw"
+
+	// golangs openpgp is deprecated and frozen
+	// as a result of this, we need a supported
+	// fork so replacing with ProtonMails as this
+	// is the most up to date.
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -227,6 +234,94 @@ func (a *Autoloader) addSSHKey(key, passphrase []byte, filename string) error {
 	return nil
 }
 
+func (a *Autoloader) getFingerprint(key []byte) (string, error) {
+	var (
+		els         openpgp.EntityList
+		el          *openpgp.Entity
+		err         error
+		fingerprint string
+	)
+
+	if els, err = openpgp.ReadArmoredKeyRing(bytes.NewReader(key)); err != nil {
+		return "", fmt.Errorf("failed to read armored key ring: %w", err)
+	}
+
+	if len(els) != 1 {
+		return "", fmt.Errorf("expected 1 key in armored key ring, got %d", len(els))
+	}
+
+	el = els[0]
+
+	fingerprint = hex.EncodeToString(el.PrimaryKey.Fingerprint[:])
+	return fingerprint, nil
+}
+
+func (a *Autoloader) getKeygrips(fingerprint string) (kg []string, err error) {
+	// Now make sure the key is fully unlocked
+	// for this we need to get the keygrip and then use that to set the passphrase
+	// using the /usr/lib/gnupg2/gpg-preset-passphrase command
+	//
+	// If these steps cannot be completed, it can safely be suppressed as the
+	// key will still be loaded into the agent, but will require the user to
+	// enter the passphrase manually.
+	var (
+		stdout  strings.Builder
+		stderr  strings.Builder
+		gpgCmd  *exec.Cmd
+		gpgArgs []string = []string{
+			"--with-keygrip", "--with-colons",
+			"--list-secret-keys", fingerprint,
+		}
+	)
+
+	gpgCmd = exec.Command("gpg", gpgArgs...)
+	gpgCmd.Stdout = &stdout
+	gpgCmd.Stderr = &stderr
+
+	if err = gpgCmd.Run(); err != nil {
+		printBuffers(&stdout, &stderr)
+		err = fmt.Errorf("failed to get keygrip: %w", err)
+		return
+	}
+
+	printBuffers(&stdout, &stderr)
+
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		if strings.HasPrefix(line, "grp") {
+			kg = append(kg, strings.Split(line, ":")[9])
+		}
+	}
+
+	if len(kg) == 0 {
+		err = fmt.Errorf("failed to get keygrip for key %q", fingerprint)
+		return
+	}
+
+	return
+}
+
+func unlockKeys(kg string, passphrase []byte) error {
+	var (
+		gpgCmd *exec.Cmd
+		err    error
+		stdout strings.Builder
+		stderr strings.Builder
+		reader bytes.Reader = *bytes.NewReader(passphrase)
+	)
+
+	gpgCmd = exec.Command("/usr/lib/gnupg2/gpg-preset-passphrase", "-c", kg)
+	gpgCmd.Stdin = &reader
+	gpgCmd.Stdout = &stdout
+	gpgCmd.Stderr = &stderr
+
+	if err = gpgCmd.Run(); err != nil {
+		printBuffers(&stdout, &stderr)
+		return fmt.Errorf("failed to set passphrase: %w", err)
+	}
+	printBuffers(&stdout, &stderr)
+	return nil
+}
+
 // AddKey adds a key to the gpg-agent
 //
 // This is mainly a wrapper to the `gpg` command and will feed the key into
@@ -242,8 +337,14 @@ func (a *Autoloader) addPGPKey(key, passphrase []byte, filename string) error {
 			"--batch", "--yes",
 			"--pinentry-mode", "loopback",
 		}
-		err error
+		err         error
+		fingerprint string
+		keygrips    []string
 	)
+
+	if fingerprint, err = a.getFingerprint(key); err != nil {
+		return fmt.Errorf("failed to get fingerprint: %w", err)
+	}
 
 	if passphrase != nil {
 		gpgArgs = append(gpgArgs, "--passphrase", string(passphrase))
@@ -262,14 +363,29 @@ func (a *Autoloader) addPGPKey(key, passphrase []byte, filename string) error {
 	}
 
 	printBuffers(&stdout, &stderr)
+
+	if keygrips, err = a.getKeygrips(fingerprint); err != nil {
+		return fmt.Errorf("failed to get keygrip: %w", err)
+	}
+
+	for _, kg := range keygrips {
+		if err = unlockKeys(kg, passphrase); err != nil {
+			return fmt.Errorf("failed to unlock keys: %w", err)
+		}
+	}
+
 	return nil
 }
 
 func printBuffers(stdout, stderr *strings.Builder) {
 	for _, b := range strings.Split(stderr.String(), "\n") {
-		log.Println("stderr:", b)
+		if len(strings.TrimSpace(b)) > 0 {
+			log.Println("stderr:", b)
+		}
 	}
 	for _, b := range strings.Split(stdout.String(), "\n") {
-		log.Println("stdout:", b)
+		if len(strings.TrimSpace(b)) > 0 {
+			log.Println("stdout:", b)
+		}
 	}
 }
