@@ -79,6 +79,13 @@ func (c *client) Post(ctx context.Context, urlstr string, recv, send any) error 
 		return err
 	}
 
+	// We need to set the GetBody function here so that the request can be
+	// retried. If we don't set this, the request will fail on retry with
+	// 400 Bad Request as the body has already been read
+	request.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(reader), nil
+	}
+
 	request.Header.Set("Content-Type", contentType)
 	if authEmail != "" {
 		// For login requests, the upstream bitwarden server wants an extra header.
@@ -90,8 +97,9 @@ func (c *client) Post(ctx context.Context, urlstr string, recv, send any) error 
 }
 
 // Get sends a GET request to the given urlstr.
-// The response is decoded into the given recv object.
-func (c *client) Get(ctx context.Context, urlstr string, recv interface{}) error {
+//
+// This is a wrapper to `DoWithBackoff` so the request is retried on failure.
+func (c *client) Get(ctx context.Context, urlstr string, recv any) error {
 	req, err := http.NewRequest("GET", urlstr, nil)
 	if err != nil {
 		return err
@@ -99,9 +107,14 @@ func (c *client) Get(ctx context.Context, urlstr string, recv interface{}) error
 	return c.DoWithBackoff(ctx, req, recv)
 }
 
-// DoWithBackoff sends the given request and decodes the response into the given
-// recv object. If the request fails, it will retry with exponential backoff.
-func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv interface{}) error {
+// DoWithBackoff applies a reqest retry policy to the given request
+//
+// By default, this will retry the request up to a max interval of 15 minutes.
+// using a jitter with a max of 500 miliseconds.
+//
+// If the request is >= 400 and < 429, the request will be retried but instead
+// cancelled and the underlying error will instead be returned.
+func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv any) error {
 	var (
 		initialInterval     = 500 * time.Millisecond
 		randomizationFactor = 0.1

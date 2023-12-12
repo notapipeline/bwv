@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/transport"
@@ -46,21 +47,35 @@ func urlValues(pairs ...string) url.Values {
 // users client_id and client_secret.
 func (b *Bwv) ApiLogin(s map[string]string) (*types.LoginResponse, error) {
 	log.Println("executing api login")
-	var lr types.LoginResponse
-	login := urlValues(
-		"grant_type", "client_credentials",
-		"scope", "api",
-		"client_id", s["BW_CLIENTID"],
-		"client_secret", s["BW_CLIENTSECRET"],
-		"deviceType", "3",
-		"deviceIdentifier", "aac2e34a-44db-42ab-a733-5322dd582c3d",
-		"deviceName", "firefox",
+	var (
+		err   error
+		lr    types.LoginResponse
+		login url.Values = urlValues(
+			"grant_type", "client_credentials",
+			"scope", "api",
+			"client_id", s["BW_CLIENTID"],
+			"client_secret", s["BW_CLIENTSECRET"],
+			"deviceType", "3",
+			"deviceIdentifier", "aac2e34a-44db-42ab-a733-5322dd582c3d",
+			"deviceName", "firefox",
+		)
 	)
 
-	ctx := context.Background()
-	err := transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &lr, login)
+	// URL values cannot be retried and on failure, is likely to kill the process
+	//
+	// as most instances, a delayed retry will succeed, we can wrap this here
+	// to try keep the process alive by adding a longer delay.
+	for i := 0; i < 5; i++ {
+		ctx := context.Background()
+		err = transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &lr, login)
+		if err == nil {
+			break
+		}
+		<-time.After(time.Duration(1) * time.Second)
+	}
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Could not login: %w", err)
 	}
 
 	if b.Secrets, err = cache.Instance(s["BW_PASSWORD"], s["BW_EMAIL"], lr.KDFInfo); err != nil {
