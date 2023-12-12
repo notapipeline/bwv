@@ -1,0 +1,86 @@
+{
+  "Profile": {
+    "ID": "d2e23370-94d7-4b86-8518-afa923929a55",
+    "Name": "Test User",
+    "Email": "email@example.com",
+    "EmailVerified": true,
+    "Premium": true,
+    "MasterPasswordHint": "Not a real account",
+    "Culture": "en-US",
+    "TwoFactorEnabled": true,
+    "Key": "2.i/7aEu9Pc3WI8hvaADB/Fg==|gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4=",
+    "PrivateKey": "2.PpAOs7R4IQmQemIAgOQ3MQ==|/zueyqIcWIxuuL7/wayDPH6NpoAQZCdTSxgbY9GjWO46MfaTBN5vuJyheyxoagu82K9JgC4Mgw+APo50bZ4M+gvoh4WaJIBacVyrNflBGJo=|qmBAo64NEtLztIOwmznPaAQ7f+4MKka4v3OC7qDOgAw=",
+    "SecurityStamp": "0cfb128b-6ee4-4bec-a254-3d6fb5dab8a9",
+    "Organizations": []
+  },
+  "Folders": [
+    {
+      "ID": "79477330-c18a-42e5-aad5-9e9f1327b355",
+      "Name": "2.2jM1jzkd+8MZcKGZTPgrog==|rLN0Fhvxp3+nNcb3szayaA==|jXEhGTljuiKfbNR69OPC47Hy1xb6W7KXCmGrHwdAR8c=",
+      "RevisionDate": "2021-04-28T09:02:44.0866667Z"
+    }
+  ],
+  "Ciphers": [
+    {
+      "Type": 1,
+      "ID": "7501cb8e-2adc-4941-9758-8b09b95637ac",
+      "Name": "2.voXTUM2tLPrA6hfUaiO5vQ==|B4N6Pp8yDKT9/yIA4qiEmQ==|oXeV4o8WlU2Y3ETPNesRpSHZdTUuZ1dyYznA5ninZG0=",
+      "Edit": true,
+      "RevisionDate": "2022-10-01T18:15:30.6666667Z",
+      "FolderID": "79477330-c18a-42e5-aad5-9e9f1327b355",
+      "Login": {
+        "Password": "2.IpXYBXvvIBNBewarXkBTng==|UB2u/0QeaJfs4ZDH52E2EA==|JakAHycn4TDU6cIV8yqOr/ik8oGP+rWTCYDBR17hKqg=",
+        "URI": "2.kQsscDpoDvnuoQ6bCysIKQ==|Ak1F2/V/FfGdROLIFJDprSv0DP3LYAzq+u9s6ZMMU2w=|pLN3N/vJFAqU3eHI2VnSAu7Yu/94dMFcJJA1caN9TdI=",
+        "URIs": [
+          {
+            "URI": "2.kQsscDpoDvnuoQ6bCysIKQ==|Ak1F2/V/FfGdROLIFJDprSv0DP3LYAzq+u9s6ZMMU2w=|pLN3N/vJFAqU3eHI2VnSAu7Yu/94dMFcJJA1caN9TdI=",
+            "Match": 0
+          }
+        ],
+        "Username": "2.GVbeW70fwJe8rMWl8Zd7nQ==|c4RdXBV6MddPGpU1W99Wng==|CzngfKzJzKKoCCcOct6g3ZmUCAumCdRA2L5fJa2mYMo=",
+        "Totp": "2.rR5h5KpTxCSQ7q9lRzKNHg==|zxa0scQuVMZv1qrlwYYoKQ==|9RlfrK9Dm4ETqI+CknTryZVWMUcAo11bp9iyvAZeA3g="
+      },
+      "Fields": [
+        {
+          "Type": 1,
+          "Name": "2.mIWcBBL3HpD2dt+EkK6c7Q==|nQPf5cOmI+37q4FRoE4tJQ==|SsKqClLq2A5saZz16xz3rjofDXOcGPV83ZRq57RATWo=",
+          "Value": "2.IpKwPRYGiogkTwKj7nuDHA==|mDG48GV6xnz+ROC8P/lVCQ==|QzRF3PQH6jLHxL+hVMk0Zdl22MRGnAHCtz+wFsoaxXc="
+        }
+      ]
+    },
+    {
+      "Type": 2,
+      "ID": "1a6679c2-f53c-443b-9587-3cddc124e84d",
+      "Name": "2.4a7yylGvZctqqbPBcaEV4w==|Um0X4xSUF+Ff4vLRXlOQ+bvQHPVNp2M34WnKKLg2V7A=|Ui9QuRJZcOZqwkFwQY7DrtjzD1ktfrIE7MvsYFNPUKk=",
+      "Edit": true,
+      "RevisionDate": "2021-07-31T14:42:27.3733333Z",
+      "FolderID": "79477330-c18a-42e5-aad5-9e9f1327b355",
+      "Attachments": [
+        {
+          "fileName": "2.mHOaF+ZFNGABH3RGE7qHIQ==|aw0D4uBGDAhivhLH5JC99g==|Q/QTEXoEfZCFpXSUn13WiEcCc+7eaC+P6r2MM7NTUcY=",
+          "id": "WADDea3OW459JlYtPQ4cpsEB3fNr4YVb",
+          "key": "2.qOe/v47et9AD8Pix51hNbQ==|f8ptkGjv5jWyYLyE5G3dQHuN31CvMKdkInHN5fQQTtjutzZG0rl43ePYvbUv3oTLF28vC/kS8jyj0mUqNaENyBnXT7+n1YSEXAluKUzdOns=|R5P03sjTlqrnV8lJLXhVymdpv+RjCcBHB3P/eA/ayes=",
+          "object": "attachment",
+          "size": "3441",
+          "sizeName": "3.2 KB",
+          "url": "https://cdn.bitwarden.net/attachments/1a6679c2-f53c-443b-9587-3cddc124e84d/WADDea3OW459JlYtPQ4cpsEB3fNr4YVb"
+        }
+      ],
+      "Fields": [
+        {
+          "Type": 0,
+          "Name": "2.hB0vre8JankrQVpc/btj0Q==|gA3D4PecRE37E9i57LpHrw==|OLqroMbuIuoxS4VaeHty64LgDvoHXTHly+ongPZxlYE=",
+          "Value": "2.0ioaC0P1/CldM80y8naszg==|5Y6x8B9in6Y4YBAnN9SzgA==|tg+vXOJ6o5v8tMsqYvYjY9j7vsHNB7JuKKCP9XGsSGY="
+        },
+        {
+          "Type": 1,
+          "Name": "2.mi5juO0zWn8u4lxc8HEkQQ==|2SSUMH4MofZEtgkhYqI3Dw==|yWQeXiFv1f3oDVcqUHPKcP25c3tw2dYYMtqcXIjFtLg=",
+          "Value": "2.Ywkw7wW1Nc+vN+ksWDc/ew==|77zCmGMxII2bYr8rM1ue/zU/qdf2IauuJvsnXwpI2aJNC2K5iydLUfcA+cLmpnc5|oywLp8GtMdKb4m6DyGF2SulcfCjZwZB/kMzIHGJ+Xmk="
+        }
+      ],
+      "SecureNote": {
+        "Type": 0
+      }
+    }
+  ]
+}

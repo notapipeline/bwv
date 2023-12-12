@@ -19,33 +19,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/hokaccha/go-prettyjson"
+	"github.com/notapipeline/bwv/pkg/bitw"
 	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
 )
 
-type VaultItem struct {
-	Path        string
-	Fields      []string
-	Parameters  []string
-	Attachments []string
-	Notes       []string
-	SecureNotes []string
-	Token       string
-	Server      string
-	Port        int
-	Cert        string
-	Key         string
-	SkipVerify  bool
-}
-
-var vaultItem VaultItem = VaultItem{}
+var vaultItem types.VaultItem = types.VaultItem{}
 var clientCmd types.ClientCmd = types.ClientCmd{}
 
 var cfgFile string
@@ -66,34 +53,55 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		if len(os.Args[1:]) == 0 {
 			return cmd.Help()
 		}
-		if vaultItem.Token == "" {
-			if err := loadClientConfig(); err != nil {
-				return err
-			}
-		}
-
-		if vaultItem.Path == "" {
-			return fmt.Errorf("No path specified")
-		}
-
 		// Send to server
 		var (
-			req     *http.Request
-			ctx     context.Context = context.Background()
-			err     error
-			address string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
-			fields  string = "fields=" + strings.Join(vaultItem.Fields, ",")
-			props   string = "properties=" + strings.Join(vaultItem.Parameters, ",")
+			req         *http.Request
+			ctx         context.Context = context.Background()
+			err         error
+			address     string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			fields      string = "fields=" + strings.Join(vaultItem.Fields, ",")
+			props       string = "properties=" + strings.Join(vaultItem.Parameters, ",")
+			attachments string = "attachments=" + strings.Join(vaultItem.Attachments, ",")
 		)
 
-		ctx = context.WithValue(ctx, transport.AuthToken{}, vaultItem.Token)
-		if req, err = http.NewRequest("GET", address+"/"+vaultItem.Path+"?"+fields+"&"+props, nil); err != nil {
+		if vaultItem.Path == "" {
+			return fmt.Errorf("no path specified")
+		}
+
+		clientCmd.Token = getEncryptedToken()
+
+		ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
+		var getProperties []string = make([]string, 0)
+		if attachments != "attachments=" {
+			getProperties = append(getProperties, attachments)
+		}
+
+		if fields != "fields=" {
+			getProperties = append(getProperties, fields)
+		}
+
+		if props != "properties=" {
+			getProperties = append(getProperties, props)
+		}
+
+		if vaultItem.Notes {
+			getProperties = append(getProperties, "notes=true")
+		}
+
+		if vaultItem.SecureNotes {
+			getProperties = append(getProperties, "securenotes=true")
+		}
+
+		var parameters string = strings.Join(getProperties, "&")
+
+		if req, err = http.NewRequest("GET", address+"/"+vaultItem.Path+"?"+parameters, nil); err != nil {
 			fatal("unable to create request for %s: %q", address, err)
 			return nil
 		}
 
 		var r types.SecretResponse
 		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
+			log.Printf("%+v", clientCmd)
 			fatal("unable to send request for %s: %q", address, err)
 		}
 
@@ -102,17 +110,22 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			return err
 		}
 
-		formatter := prettyjson.Formatter{
-			DisabledColor:   true,
+		/*formatter := prettyjson.Formatter{
+			//DisabledColor:   false,
 			Indent:          4,
 			Newline:         "\n",
 			StringMaxLength: 0,
-		}
+		}*/
 
-		if b, err = formatter.Format(b); err != nil {
+		var structure interface{}
+		if err = json.Unmarshal(b, &structure); err != nil {
 			return err
 		}
-		fmt.Printf("%s\n", b)
+
+		if b, err = prettyjson.Marshal(structure); err != nil {
+			return err
+		}
+		fmt.Println(string(b))
 		return nil
 	},
 }
@@ -135,40 +148,14 @@ func Execute() {
 		for i := 1; i < len(os.Args); {
 			var f string = os.Args[i]
 			switch f {
-			case "-t", "--token":
-				args = append(args, "-t")
+			case "-t", "--token", "-f", "--fields", "-p", "--params", "-a", "--attachments":
+				fallthrough
+			case "--config", "--server", "--port", "--cert", "--key":
+				args = append(args, os.Args[i])
 				args = append(args, os.Args[i+1])
 				i += 2
-			case "-f", "--fields":
-				args = append(args, "-f")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "-p", "--params":
-				args = append(args, "-p")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "--config":
-				args = append(args, "--config")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "--server":
-				args = append(args, "--server")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "--port":
-				args = append(args, "--port")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "--cert":
-				args = append(args, "--cert")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "--key":
-				args = append(args, "--key")
-				args = append(args, os.Args[i+1])
-				i += 2
-			case "--skip-verify":
-				args = append(args, "--skip-verify")
+			case "--skip-verify", "--debug", "--quiet":
+				args = append(args, os.Args[i])
 				i++
 			default:
 				args = append(args, "-P")
@@ -187,28 +174,46 @@ func Execute() {
 func init() {
 	// These are conistent across all commands
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/bwv/client.yaml)")
-	rootCmd.PersistentFlags().StringVar(&clientCmd.Server, "server", "", "address of the server (default is localhost)")
-	rootCmd.PersistentFlags().IntVar(&clientCmd.Port, "port", 6277, "port of the server (default is 6277)")
-	rootCmd.PersistentFlags().BoolVar(&vaultItem.SkipVerify, "skip-verify", false, "skip verification of the server certificate")
+	rootCmd.PersistentFlags().StringVar(&clientCmd.Server, "server", "localhost", "address of the server")
+	rootCmd.PersistentFlags().IntVar(&clientCmd.Port, "port", bitw.DefaultPort, "port of the server")
+	rootCmd.PersistentFlags().BoolVar(&clientCmd.SkipVerify, "skip-verify", false, "skip verification of the server certificate")
+	rootCmd.PersistentFlags().BoolVar(&clientCmd.Debug, "debug", false, "enable debug logging")
+	rootCmd.PersistentFlags().BoolVar(&clientCmd.Quiet, "quiet", false, "disable all logging")
 
 	// these are for the client
 	rootCmd.Flags().StringSliceVarP(&vaultItem.Fields, "fields", "f", []string{}, "Retrieve the field(s) from a vault item (may be specified multiple times)")
 	rootCmd.Flags().StringSliceVarP(&vaultItem.Parameters, "params", "p", []string{}, "Retrieve the parameter(s) from a vault item (may be specified multiple times)")
 	rootCmd.Flags().StringSliceVarP(&vaultItem.Attachments, "attachments", "a", []string{}, "Retrieve the attachment(s) from a vault item (may be specified multiple times)")
-	rootCmd.Flags().StringSliceVarP(&vaultItem.Notes, "notes", "n", []string{}, "Retrieve the note(s) from a vault item (may be specified multiple times)")
-	rootCmd.Flags().StringSliceVarP(&vaultItem.SecureNotes, "secure-notes", "s", []string{}, "Retrieve the secure note(s) from a vault item (may be specified multiple times)")
 	rootCmd.Flags().StringVarP(&vaultItem.Path, "path", "P", "", "Path to the vault item")
-	rootCmd.Flags().StringVarP(&vaultItem.Token, "token", "t", "", "Token for accessing the server")
+	rootCmd.Flags().StringVarP(&clientCmd.Token, "token", "t", "", "Token for accessing the server")
 }
 
-func loadClientConfig() error {
+func loadClientConfig() (err error) {
 	c := config.New()
-	if err := c.Load(config.ConfigModeClient); err != nil {
+	if err = c.Load(config.ConfigModeClient); err != nil {
 		return err
 	}
-	if c.Token == "" {
-		return fmt.Errorf("No token found in client configuration")
+
+	if clientCmd.Token == "" {
+		clientCmd.Token = c.Token
+		if c.Token == "" {
+			fatal("no token specified")
+		}
 	}
-	vaultItem.Token = c.Token
-	return nil
+
+	if clientCmd.Server == "" {
+		clientCmd.Server = c.Address
+		if c.Address == "" {
+			clientCmd.Server = "localhost"
+		}
+	}
+
+	if clientCmd.Port == 0 {
+		clientCmd.Port = c.Port
+		if c.Port == 0 {
+			clientCmd.Port = bitw.DefaultPort
+		}
+	}
+
+	return
 }

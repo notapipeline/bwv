@@ -27,6 +27,13 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
+// SecretCache is the main structural holding point for secret data retrieved
+// from the Bitwarden servers.
+//
+// Initialization of this object is done in a singleton fashion to ensure data
+// is not duplicated in memory. The master password is salted with the email
+// address, passed through the number of iterations defined and stored in locked
+// memory. The master password is then discarded.
 type SecretCache struct {
 	Data *types.DataFile
 
@@ -54,7 +61,6 @@ var (
 // When instantiating this object, the master password is salted with the email
 // address, passed through the number of iterations defined and stored in locked
 // memory. The master password is then discarded.
-
 var Instance = instance
 
 func instance(masterpw, email string, kdf types.KDFInfo) (*SecretCache, error) {
@@ -81,7 +87,6 @@ func Reset() {
 	secretCache = nil
 }
 
-// MasterPassword returns the master password used to unlock the secret cache.
 func MasterPassword() []byte {
 	if secretCache == nil {
 		return nil
@@ -89,6 +94,15 @@ func MasterPassword() []byte {
 	return secretCache.masterpw
 }
 
+// MasterPassword returns the master password used to unlock the secret cache.
+func MasterPasswordKeyMac() ([]byte, []byte, error) {
+	if secretCache == nil {
+		return nil, nil, nil
+	}
+	return crypto.StretchKey(secretCache.masterpw)
+}
+
+// UserKey returns the user key and mac key used to encrypt and decrypt data.
 func UserKey() ([]byte, []byte) {
 	if secretCache == nil {
 		return nil, nil
@@ -96,6 +110,13 @@ func UserKey() ([]byte, []byte) {
 	return secretCache.key, secretCache.macKey
 }
 
+// Unlock the secret cache with the given key cipher.
+//
+// This method expects the User key as an encrypted CipherString as it is
+// delivered from the Bitwarden server.
+//
+// This key can be found in both the Profile field of the data file as well as
+// the LoginResponse.
 func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
 	var (
 		key, macKey, finalKey []byte
@@ -134,12 +155,14 @@ func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
 	return
 }
 
+// Update the secret cache with the given data file.
 func (c *SecretCache) Update(data *types.DataFile) (err error) {
 	c.Data = data
 	err = c.Unlock(data.Sync.Profile.Key)
 	return
 }
 
+// HashPassword hashes the given password with the master password.
 func (c *SecretCache) HashPassword(password string) string {
 	hashedpw := base64.StdEncoding.
 		Strict().
@@ -147,6 +170,10 @@ func (c *SecretCache) HashPassword(password string) string {
 	return hashedpw
 }
 
+// DecryptStr takes a cipher string and decrypts it using the user key returning
+// a string resopnse.
+//
+// This is a convenience method that wraps Decrypt.
 func (c *SecretCache) DecryptStr(s types.CipherString) (ret string, err error) {
 	var b []byte
 	if b, err = c.Decrypt(s); err == nil {
@@ -155,6 +182,10 @@ func (c *SecretCache) DecryptStr(s types.CipherString) (ret string, err error) {
 	return
 }
 
+// Decrypt takes a cipher string and decrypts it using the user key returning a
+// byte slice.
+//
+// This is a convenience method that wraps crypto.DecryptWith.
 func (c *SecretCache) Decrypt(s types.CipherString) ([]byte, error) {
 	if s.IsZero() {
 		return nil, nil
@@ -162,10 +193,18 @@ func (c *SecretCache) Decrypt(s types.CipherString) ([]byte, error) {
 	return crypto.DecryptWith(s, c.key, c.macKey)
 }
 
+// Encrypt takes a byte slice and encrypts it using the user key returning a
+// cipher string.
+//
+// This is a convenience method that wraps crypto.EncryptWith.
 func (c *SecretCache) Encrypt(data []byte) (types.CipherString, error) {
 	return c.EncryptType(data, types.AesCbc256_HmacSha256_B64)
 }
 
+// EncryptType takes a byte slice and encrypts it using the user key returning a
+// cipher string.
+//
+// This is a convenience method that wraps crypto.EncryptWith.
 func (c *SecretCache) EncryptType(d []byte, t types.CipherStringType) (types.CipherString, error) {
 	if len(d) == 0 {
 		return types.CipherString{}, nil

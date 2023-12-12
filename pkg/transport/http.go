@@ -20,11 +20,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -123,7 +122,7 @@ func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv inte
 	}
 
 	notify := func(err error, d time.Duration) {
-		fmt.Fprintf(os.Stderr, "Retrying in %s after error: %v\n", d, err)
+		log.Printf("Retrying in %s after error: %v", d, err)
 	}
 
 	return backoff.RetryNotifyWithTimer(f, exp, notify, nil)
@@ -141,7 +140,7 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 	if token, ok := ctx.Value(AuthToken{}).(string); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("User-Agent", "curl/8.2.1")
+	req.Header.Set("User-Agent", "bwv/0.0.1")
 
 	var (
 		response *http.Response

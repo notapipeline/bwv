@@ -459,7 +459,7 @@ func TestDecrypt(t *testing.T) {
 			kdf:           types.KDFInfo{Type: types.KDFTypePBKDF2, Iterations: 800000},
 			cipherString:  "2.MXGlACtpskXxMLTVQxT2gA==|macyrS8aApZ8roMxmHxCbQ==|moqXd+Yj14k7F+SQ8pScS0oJShShYMZIBo3/LksOdV4=",
 			expected:      "",
-			expectedError: fmt.Errorf("decrypt: MAC mismatch 6 != 32"),
+			expectedError: fmt.Errorf(`decrypt: MAC mismatch "AQIDBAUG" != "AeeKL764rq2Wg+cZKI3F8Sl5+Bek6R4204vYDHbVnjc="`),
 			mocks: &CryptoMock{
 				Unmarshal: func(cs types.CipherString, text []byte) (types.CipherString, error) {
 					err := cs.UnmarshalText(text)

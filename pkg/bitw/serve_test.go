@@ -16,6 +16,7 @@
 package bitw
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -26,11 +27,13 @@ import (
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/crypto"
+	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
+	"github.com/notapipeline/bwv/testdata"
 )
 
 func setupSuite(t *testing.T) func(t *testing.T) {
-	t.Log("Setting up config suite")
+	t.Log("Setting up serve test suite")
 	tempDir := t.TempDir()
 	ocp := config.ConfigPath
 	osc := cache.Instance
@@ -42,11 +45,14 @@ func setupSuite(t *testing.T) func(t *testing.T) {
 server:
   whitelist:
     - 127.0.0.0/24
+    - 192.168.16.1
+    - 192.168.16.4
   cert: cert.pem
   key: key.pem
   port: 8080
   apikeys:
     example.com: abcdef123456
+    192.168.16.1: 2.MJZfa5JXC1DgB2KjQGIiKQ==|C6YSdz/i0K5hUQvp3cQWRw==|pQ7xH0FTfBQKx4Ij1EkG2EvHY/HDqIiDjCJ1USsjHnI=
 `), 0644)
 
 	if err != nil {
@@ -56,6 +62,7 @@ server:
 	return func(t *testing.T) {
 		cache.Instance = osc
 		config.ConfigPath = ocp
+		cache.Reset()
 	}
 }
 
@@ -81,7 +88,7 @@ func TestHttpServerReload(t *testing.T) {
 			mocks: func() {
 				// Mock the config
 				config.ConfigPath = func(m config.ConfigMode) string {
-					return "/tmp"
+					return "/tmp/fail.yaml"
 				}
 			},
 		},
@@ -95,8 +102,12 @@ func TestHttpServerReload(t *testing.T) {
 				test.mocks()
 			}
 
+			var (
+				cnf *config.Config = config.New()
+				err error
+			)
 			// Create a new instance of HttpServer
-			server := NewHttpServer()
+			server := NewHttpServer(cnf)
 
 			// Create a new request
 			req, err := http.NewRequest("GET", "/reload", nil)
@@ -139,7 +150,7 @@ func TestStoreToken(t *testing.T) {
 		{
 			name:         "Fail if invalid method",
 			expectedCode: http.StatusMethodNotAllowed,
-			expectedBody: `{"message":"bwv denied storeToken request - invalid method"}`,
+			expectedBody: `{"message":"bwv denied the request"}`,
 			ipAddress:    "",
 			token:        "",
 			method:       "GET",
@@ -147,7 +158,7 @@ func TestStoreToken(t *testing.T) {
 		{
 			name:         "fail if no ip address",
 			expectedCode: http.StatusBadRequest,
-			expectedBody: `{"message":"bwv denied storeToken request - no ip address"}`,
+			expectedBody: `{"message":"bwv denied the request"}`,
 			ipAddress:    "",
 			token:        "",
 			method:       "POST",
@@ -155,33 +166,40 @@ func TestStoreToken(t *testing.T) {
 		{
 			name:         "fail if no token",
 			expectedCode: http.StatusUnauthorized,
-			expectedBody: `{"message":"bwv denied storeToken request - missing or invalid token"}`,
-			ipAddress:    "192.168.0.1",
+			expectedBody: `{"message":"bwv denied the request"}`,
+			ipAddress:    "127.0.0.1",
 			token:        "",
 			method:       "POST",
 		},
 		{
 			name:         "invalid token",
 			expectedCode: http.StatusForbidden,
-			expectedBody: `{"message":"bwv denied storeToken request from ip 192.168.0.1 - could not unmarshal token: cipher string does not contain type: invalidtoken"}`,
-			mocks: func() {
-				_, err := cache.Instance("masterpw", "email@example.com", types.KDFInfo{
-					Type:       types.KDFTypePBKDF2,
-					Iterations: 800000,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-			},
-			ipAddress: "192.168.0.1",
-			token:     "invalidtoken",
-			method:    "POST",
+			expectedBody: `{"message":"bwv denied the request"}`,
+			ipAddress:    "192.168.0.1",
+			token:        "invalidtoken",
+			method:       "POST",
+		},
+		{
+			name:         "broken token",
+			expectedCode: http.StatusForbidden,
+			expectedBody: "",
+			ipAddress:    "192.168.16.8",
+			token:        "2.MJZfa5JXC1DgB2KjQGIiKQ==|C6YSdz/i0K5UQvp3cQWRw=|pQ7xH0FTfBQKx4Ij1EkG2EvHY/HDqIiDjCJ1USsjHnI=",
+			method:       "POST",
+		},
+		{
+			name:         "token already exists",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "",
+			ipAddress:    "192.168.16.1",
+			token:        "2.MJZfa5JXC1DgB2KjQGIiKQ==|C6YSdz/i0K5hUQvp3cQWRw==|pQ7xH0FTfBQKx4Ij1EkG2EvHY/HDqIiDjCJ1USsjHnI=",
+			method:       "POST",
 		},
 		{
 			name:         "success",
 			expectedCode: http.StatusOK,
 			expectedBody: "",
-			ipAddress:    "192.168.0.1",
+			ipAddress:    "192.168.16.4",
 			token:        "2.MJZfa5JXC1DgB2KjQGIiKQ==|C6YSdz/i0K5hUQvp3cQWRw==|pQ7xH0FTfBQKx4Ij1EkG2EvHY/HDqIiDjCJ1USsjHnI=",
 			method:       "POST",
 		},
@@ -213,14 +231,15 @@ func TestStoreToken(t *testing.T) {
 				}
 			}
 
+			var cnf *config.Config = config.New()
+
 			// Create a new instance of HttpServer
-			server := NewHttpServer()
-			if err = server.c.Load(config.ConfigModeServer); err != nil {
+			server := NewHttpServer(cnf)
+			if err = server.config.Load(config.ConfigModeServer); err != nil {
 				t.Fatal(err)
 			}
 
-			var c *cache.SecretCache
-			c, err = cache.Instance("masterpw", "email@example.com", pbkdf)
+			server.Bwv.Secrets, err = cache.Instance("masterpw", "email@example.com", pbkdf)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -229,7 +248,7 @@ func TestStoreToken(t *testing.T) {
 				t.Errorf("Expected nil error but got %v when unmarshalling master password to CipherString", err)
 			}
 
-			if err := c.Unlock(cs); err != nil {
+			if err := server.Bwv.Secrets.Unlock(cs); err != nil {
 				t.Errorf("Expected nil error but got %v when unlocking", err)
 			}
 
@@ -278,6 +297,43 @@ func TestStoreToken(t *testing.T) {
 }
 
 func TestGetPath(t *testing.T) {
+	mocks := func() {
+		testData := testdata.New()
+		transport.DefaultHttpClient = &transport.MockHttpClient{
+			Responses: []transport.MockHttpResponse{
+				{
+					Code: http.StatusOK,
+					Body: testData.LoginResponse,
+				},
+				{
+					Code: http.StatusOK,
+					Body: testData.SyncResponse,
+				},
+				{
+					Code: http.StatusOK,
+					Body: testData.SyncResponse,
+				},
+				{
+					Code: http.StatusOK,
+					Body: testData.AttachmentLookupResponse,
+				},
+				{
+					Code: http.StatusOK,
+					Body: testData.Attachment,
+				},
+			},
+		}
+
+		config.GetSecrets = func(v bool) map[string]string {
+			return map[string]string{
+				"BW_CLIENTID":     "mockid",
+				"BW_CLIENTSECRET": "mocktoken",
+				"BW_PASSWORD":     "masterpw",
+				"BW_EMAIL":        "email@example.com",
+			}
+		}
+	}
+
 	tests := []struct {
 		name         string
 		expectedCode int
@@ -291,7 +347,7 @@ func TestGetPath(t *testing.T) {
 		{
 			name:         "Fail if invalid method",
 			expectedCode: http.StatusMethodNotAllowed,
-			expectedBody: `{"message":"bwv denied get request - invalid method"}`,
+			expectedBody: `{"message":"bwv denied the request - invalid method"}`,
 			ipAddress:    "",
 			token:        "",
 			method:       "POST",
@@ -300,16 +356,41 @@ func TestGetPath(t *testing.T) {
 		{
 			name:         "fail if no ip address",
 			expectedCode: http.StatusBadRequest,
-			expectedBody: `{"message":"bwv denied get request - no ip address"}`,
+			expectedBody: `{"message":"bwv denied the request"}`,
 			ipAddress:    "",
 			token:        "",
 			method:       "GET",
 			path:         "/",
 		},
 		{
-			name:         "fail if unmatched in whitelist",
+			name: "fail if unmatched in whitelist",
+			mocks: func() {
+				testData := testdata.New()
+				transport.DefaultHttpClient = &transport.MockHttpClient{
+					Responses: []transport.MockHttpResponse{
+						{
+							Code: http.StatusOK,
+							Body: []byte(`{"kdf":0, "kdfIterations": 800000}`),
+						},
+						{
+							Code: http.StatusOK,
+							Body: testData.LoginResponse,
+						},
+						{
+							Code: http.StatusOK,
+							Body: testData.SyncResponse,
+						},
+					},
+				}
+				config.GetSecrets = func(v bool) map[string]string {
+					return map[string]string{
+						"BW_PASSWORD": "masterpw",
+						"BW_EMAIL":    "email@example.com",
+					}
+				}
+			},
 			expectedCode: http.StatusForbidden,
-			expectedBody: `{"message":"bwv denied get request"}`,
+			expectedBody: `{"message":"bwv denied the request"}`,
 			ipAddress:    "192.168.0.1",
 			token:        "",
 			method:       "GET",
@@ -318,57 +399,96 @@ func TestGetPath(t *testing.T) {
 		{
 			name:         "fail if no token",
 			expectedCode: http.StatusUnauthorized,
-			expectedBody: `{"message":"bwv denied get request - missing or invalid token"}`,
+			expectedBody: `{"message":"bwv denied the request"}`,
 			ipAddress:    "127.0.0.1",
 			token:        "",
 			method:       "GET",
 			path:         "/",
 		},
+		{
+			name:         "end to end success full secret response",
+			mocks:        mocks,
+			expectedCode: http.StatusOK,
+			expectedBody: `{"message":[{` +
+				`"type":1,"id":"7501cb8e-2adc-4941-9758-8b09b95637ac",` +
+				`"revision_date":"2022-10-01T18:15:30.6666667Z",` +
+				`"name":"testkey","fields":{"example":"value"},` +
+				`"folder_id":"79477330-c18a-42e5-aad5-9e9f1327b355",` +
+				`"username":"testuser","password":"password","attachments":{}}]}`,
+			ipAddress: "127.0.0.1",
+			token:     "2.A35Y1GDMK6Q6QBFQ735qqw==|xDHKiep/RKP7Le05kZr/LA==|BksHlZe9hbFGSfcZDo+4exuiUBmXq+19rhkiTT7QDXo=",
+			method:    "GET",
+			path:      "/mockfolder/testkey",
+		},
+		{
+			name:         "end to end success single field response",
+			mocks:        mocks,
+			expectedCode: http.StatusOK,
+			expectedBody: `{"message":{"value":"value"}}`,
+			ipAddress:    "127.0.0.1",
+			token:        "2.A35Y1GDMK6Q6QBFQ735qqw==|xDHKiep/RKP7Le05kZr/LA==|BksHlZe9hbFGSfcZDo+4exuiUBmXq+19rhkiTT7QDXo=",
+			method:       "GET",
+			path:         "/mockfolder/testkey?fields=example",
+		},
+		{
+			name:         "end to end success single property response",
+			mocks:        mocks,
+			expectedCode: http.StatusOK,
+			expectedBody: `{"message":{"value":"testuser"}}`,
+			ipAddress:    "127.0.0.1",
+			token:        "2.A35Y1GDMK6Q6QBFQ735qqw==|xDHKiep/RKP7Le05kZr/LA==|BksHlZe9hbFGSfcZDo+4exuiUBmXq+19rhkiTT7QDXo=",
+			method:       "GET",
+			path:         "/mockfolder/testkey?properties=username",
+		},
+		{
+			name:         "end to end success mixed fields and properties response",
+			mocks:        mocks,
+			expectedCode: http.StatusOK,
+			expectedBody: `{"message":{"example":"value","password":"password","username":"testuser"}}`,
+			ipAddress:    "127.0.0.1",
+			token:        "2.A35Y1GDMK6Q6QBFQ735qqw==|xDHKiep/RKP7Le05kZr/LA==|BksHlZe9hbFGSfcZDo+4exuiUBmXq+19rhkiTT7QDXo=",
+			method:       "GET",
+			path:         "/mockfolder/testkey?fields=example&properties=username,password",
+		},
+		{
+			name:         "end to end success attachment response",
+			mocks:        mocks,
+			expectedCode: http.StatusOK,
+			expectedBody: `{"message":{"value":"` + base64.StdEncoding.EncodeToString(testdata.New().AttachmentDecrypted) + `"}}`,
+			ipAddress:    "127.0.0.1",
+			token:        "2.A35Y1GDMK6Q6QBFQ735qqw==|xDHKiep/RKP7Le05kZr/LA==|BksHlZe9hbFGSfcZDo+4exuiUBmXq+19rhkiTT7QDXo=",
+			method:       "GET",
+			path:         "/mockfolder/some-cipher-with-attachment?attachments=filename.unc",
+		},
+		{
+			name:         "path failure",
+			mocks:        mocks,
+			expectedCode: http.StatusNotFound,
+			expectedBody: `{"message":"Path 'nothing' not found"}`,
+			ipAddress:    "127.0.0.1",
+			token:        "2.A35Y1GDMK6Q6QBFQ735qqw==|xDHKiep/RKP7Le05kZr/LA==|BksHlZe9hbFGSfcZDo+4exuiUBmXq+19rhkiTT7QDXo=",
+			method:       "GET",
+			path:         "/nothing",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			defer setupSuite(t)(t)
-			var (
-				err                     error
-				cs                      types.CipherString
-				encryptedMasterPassword string = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
-					"gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/" +
-					"19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|" +
-					"uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4="
-				pbkdf types.KDFInfo = types.KDFInfo{
-					Type:        types.KDFTypePBKDF2,
-					Iterations:  800000,
-					Memory:      types.IntPtr(0),
-					Parallelism: types.IntPtr(0),
-				}
-			)
+			var err error
 
+			t.Log("Running mocks")
 			if test.mocks != nil {
 				test.mocks()
-				if _, err = crypto.ClientEncrypt("masterpw", "email@example.com", "invalidtoken", pbkdf); err != nil {
-					t.Fatal(err)
-					return
-				}
 			}
 
-			// Create a new instance of HttpServer
-			server := NewHttpServer()
-			if err = server.c.Load(config.ConfigModeServer); err != nil {
+			var cnf *config.Config = config.New()
+			if err = cnf.Load(config.ConfigModeServer); err != nil {
 				t.Fatal(err)
 			}
+			server := NewHttpServer(cnf)
 
-			var c *cache.SecretCache
-			c, err = cache.Instance("masterpw", "email@example.com", pbkdf)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			if err := cs.UnmarshalText([]byte(encryptedMasterPassword)); err != nil {
-				t.Errorf("Expected nil error but got %v when unmarshalling master password to CipherString", err)
-			}
-
-			if err := c.Unlock(cs); err != nil {
-				t.Errorf("Expected nil error but got %v when unlocking", err)
+			if test.mocks != nil {
+				server.Bwv.Setup()
 			}
 
 			// Create a new request
@@ -403,15 +523,6 @@ func TestGetPath(t *testing.T) {
 					t.Errorf("Expected response body %q, got %q", test.expectedBody, actualBody)
 				}
 			}
-
-			if test.expectedCode == http.StatusOK {
-				m := make(map[string]string)
-				_ = json.Unmarshal(recorder.Body.Bytes(), &m)
-				if _, ok := m["token"]; !ok {
-					t.Errorf("Expected token in response body")
-				}
-			}
-
 		})
 	}
 }

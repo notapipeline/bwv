@@ -16,17 +16,17 @@
 package types
 
 import (
-	"encoding/base64"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+// IntPtr literally only exists because I needed pointers to ints for tests
 func IntPtr(i int) *int {
 	return &i
 }
 
-// {"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}
+// KDFInfo describes the key derivation function used to derive the master key
 type KDFInfo struct {
 	Type        KDFType `json:"kdf"`
 	Iterations  int     `json:"kdfIterations"`
@@ -34,12 +34,14 @@ type KDFInfo struct {
 	Parallelism *int    `json:"kdfParallelism,omitempty"`
 }
 
+// SyncData describes the data returned by the sync endpoint (/sync)
 type SyncData struct {
 	Profile Profile
 	Folders []Folder
 	Secrets []Secret `json:"Ciphers"`
 }
 
+// SecretType describes a generic Bitwarden Cipher
 type Secret struct {
 	Type         SecretType
 	ID           uuid.UUID
@@ -64,6 +66,7 @@ type Secret struct {
 	SecureNote *SecureNote   `json:",omitempty"`
 }
 
+// Attachment contains information about a file attachment to a Cipher
 type Attachment struct {
 	FileName *CipherString `json:"fileName"`
 	ID       string        `json:"id"`
@@ -73,71 +76,3 @@ type Attachment struct {
 	SizeName string        `json:"sizeName"`
 	URL      string        `json:"url"`
 }
-
-type SymmetricKey struct {
-	Key    []byte
-	EncKey []byte
-	MacKey []byte
-
-	Base64Key    string
-	Base64EncKey string
-	Base64MacKey string
-
-	Meta any
-}
-
-func NewSymmetricKey(key []byte, keyType *CipherStringType) (*SymmetricKey, error) {
-	k := &SymmetricKey{
-		Key:          key,
-		EncKey:       nil,
-		MacKey:       nil,
-		Base64Key:    "",
-		Base64EncKey: "",
-		Base64MacKey: "",
-		Meta:         nil,
-	}
-
-	switch *keyType {
-	case AesCbc256_B64:
-		if len(key) != 32 {
-			return nil, &InvalidKeyLengthError{Value: len(key), Type: *keyType}
-		}
-		k.EncKey = key
-		k.MacKey = nil
-	case AesCbc128_HmacSha256_B64:
-		if len(key) != 32 {
-			return nil, &InvalidKeyLengthError{Value: len(key), Type: *keyType}
-		}
-		k.EncKey = key[:16]
-		k.MacKey = key[16:]
-	case AesCbc256_HmacSha256_B64:
-		if len(key) != 64 {
-			return nil, &InvalidKeyLengthError{Value: len(key), Type: *keyType}
-		}
-		k.EncKey = key[:32]
-		k.MacKey = key[32:]
-	default:
-		return nil, &UnsupportedTypeError{Value: int(*keyType)}
-	}
-
-	if k.Key != nil {
-		k.Base64Key = base64.StdEncoding.EncodeToString(k.Key)
-	}
-	if k.EncKey != nil {
-		k.Base64EncKey = base64.StdEncoding.EncodeToString(k.EncKey)
-	}
-	if k.MacKey != nil {
-		k.Base64MacKey = base64.StdEncoding.EncodeToString(k.MacKey)
-	}
-	return k, nil
-}
-
-type PartialKey string
-
-const (
-	MasterAutoKey    PartialKey = "_masterkey_auto"
-	BiometricKey     PartialKey = "_masterkey_biometric"
-	MasterKey        PartialKey = "_masterkey"
-	UserAutoKey      PartialKey = "_user_auto"
-	UserBiometricKey PartialKey = "_user_biometric"
-)

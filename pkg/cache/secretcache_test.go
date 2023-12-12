@@ -72,7 +72,7 @@ func TestInstancePassword(t *testing.T) {
 
 	var (
 		expectedPasswd string = "w\x0eK\xc6\x0er\xd6eg\xce\xec\r\n\xebAN\xa1\x80\"\x96=hN\x15\x8d\x98\xfe\xac\v\xdcT\x1d"
-		receivedPasswd string = string(MasterPassword())
+		receivedPasswd string = string(secretCache.masterpw)
 		expected       string = "CCjdBXfDr1pZDn29R998UsQsLkqkadyk27CFlhUxDEk="
 		received       string = cache.HashPassword("masterpw")
 	)

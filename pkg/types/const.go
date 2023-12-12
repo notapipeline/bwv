@@ -17,6 +17,7 @@ package types
 
 // Taken from https://github.com/bitwarden/jslib/blob/f30d6f8027055507abfdefd1eeb5d9aab25cc601/src/enums/encryptionType.ts
 const (
+	// Cipher Functions
 	AesCbc256_B64                     CipherStringType = 0
 	AesCbc128_HmacSha256_B64          CipherStringType = 1
 	AesCbc256_HmacSha256_B64          CipherStringType = 2
@@ -24,8 +25,10 @@ const (
 	Rsa2048_OaepSha1_B64              CipherStringType = 4
 	Rsa2048_OaepSha256_HmacSha256_B64 CipherStringType = 5
 	Rsa2048_OaepSha1_HmacSha256_B64   CipherStringType = 6
-	KDFTypePBKDF2                     KDFType          = 0
-	KDFTypeArgon2id                   KDFType          = 1
+
+	// KDF Functions
+	KDFTypePBKDF2   KDFType = 0
+	KDFTypeArgon2id KDFType = 1
 )
 
 const (
@@ -51,4 +54,14 @@ const (
 	Remember             TwoFactorProvider = 5
 	OrganizationDuo      TwoFactorProvider = 6
 	TwoFactorProviderMax                   = 7
+)
+
+type PartialKey string
+
+const (
+	MasterAutoKey    PartialKey = "_masterkey_auto"
+	BiometricKey     PartialKey = "_masterkey_biometric"
+	MasterKey        PartialKey = "_masterkey"
+	UserAutoKey      PartialKey = "_user_auto"
+	UserBiometricKey PartialKey = "_user_biometric"
 )

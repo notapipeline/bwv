@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"bytes"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,12 +26,15 @@ import (
 
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/config"
-	"github.com/spf13/cobra"
+	"github.com/notapipeline/bwv/pkg/tools"
+	"github.com/notapipeline/bwv/pkg/transport"
+	"github.com/notapipeline/bwv/pkg/types"
 )
 
 func setupSuite(t *testing.T) func(t *testing.T) {
 	t.Log("Setting up config suite")
 	tempDir := t.TempDir()
+	vaultItem = types.VaultItem{}
 	ocp := config.ConfigPath
 	config.ConfigPath = func(m config.ConfigMode) string {
 		return filepath.Join(tempDir, "client.yaml")
@@ -43,98 +47,9 @@ token: ocjJueD4tiXXdCNIDVhhiOyS9XOHxDXg
 	}
 
 	return func(t *testing.T) {
+		getSecretsFromUserEnvOrStore = tools.GetSecretsFromUserEnvOrStore
 		config.ConfigPath = ocp
 		cache.Reset()
-	}
-}
-
-func TestRootCmdThrowsErrorOnMissingClientConfig(t *testing.T) {
-	// Create a new test command
-	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Test command",
-		Run:   func(cmd *cobra.Command, args []string) {},
-	}
-
-	config.ConfigPath = func(m config.ConfigMode) string {
-		return "/this/path/to/bwv/client/config/will/never/exist/client.yaml"
-	}
-	// Add the test command as a subcommand of the root command
-	rootCmd.AddCommand(testCmd)
-
-	// Create a new buffer to capture the command's output
-	buf := new(bytes.Buffer)
-
-	// Set the command's output to the buffer
-	rootCmd.SetOutput(buf)
-
-	// Execute the root command
-	var err error
-	if err = rootCmd.Execute(); err == nil {
-		t.Fatal("Expected error, got nil")
-	}
-
-	// Verify that the output contains the expected string
-	expectedOutput := "Error: stat /this/path/to/bwv/client/config/will/" +
-		"never/exist/client.yaml: no such file or director"
-	actualOutput := buf.String()
-	if !strings.Contains(actualOutput, expectedOutput) {
-		t.Fatalf("Expected output to contain %q but got %q", expectedOutput, buf.String())
-	}
-
-	// Verify that the test command is a subcommand of the root command
-	found := false
-	for _, c := range rootCmd.Commands() {
-		if c == testCmd {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected test command to be a subcommand of root command")
-	}
-}
-
-func TestRootCmd(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-
-	// Create a new test command
-	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Test command",
-		Run:   func(cmd *cobra.Command, args []string) {},
-	}
-
-	// Add the test command as a subcommand of the root command
-	rootCmd.AddCommand(testCmd)
-
-	// Create a new buffer to capture the command's output
-	buf := new(bytes.Buffer)
-
-	// Set the command's output to the buffer
-	rootCmd.SetOutput(buf)
-
-	// Execute the root command
-	Execute()
-
-	// Verify that the output contains the expected string
-	expectedOutput := "Usage"
-	actualOutput := buf.String()
-	if !strings.Contains(actualOutput, expectedOutput) {
-		t.Fatalf("Expected output to contain %q but got %q", expectedOutput, buf.String())
-	}
-
-	// Verify that the test command is a subcommand of the root command
-	found := false
-	for _, c := range rootCmd.Commands() {
-		if c == testCmd {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("Expected test command to be a subcommand of root command")
 	}
 }
 
@@ -142,15 +57,7 @@ func TestRootCmdRewriteArguments(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
 
-	// Create a new test command
-	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Test command",
-		Run:   func(cmd *cobra.Command, args []string) {},
-	}
-
-	// Add the test command as a subcommand of the root command
-	rootCmd.AddCommand(testCmd)
+	transport.DefaultHttpClient = &transport.MockHttpClient{}
 
 	// Create a new buffer to capture the command's output
 	buf := new(bytes.Buffer)
@@ -164,7 +71,6 @@ func TestRootCmdRewriteArguments(t *testing.T) {
 		"-p", "param1", "-p", "param2", "--skip-verify",
 	}
 	Execute()
-	t.Log(os.Args)
 	if !reflect.DeepEqual(os.Args, []string{"bwv", "--config", "config",
 		"--server", "localhost", "--port", "6278", "-t", "token",
 		"-P", "hello/world", "-f", "field1,field2", "-p", "param1",
@@ -179,16 +85,78 @@ func TestRootCmdRewriteArguments(t *testing.T) {
 	if !strings.Contains(actualOutput, expectedOutput) {
 		t.Fatalf("Expected output to contain %q but got %q", expectedOutput, buf.String())
 	}
+}
 
-	// Verify that the test command is a subcommand of the root command
-	found := false
-	for _, c := range rootCmd.Commands() {
-		if c == testCmd {
-			found = true
-			break
-		}
+func TestRootCmd(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           []string
+		expectedError  bool
+		expectedOutput string
+		mocks          func()
+	}{
+		{
+			name:           "TestRootCmd",
+			args:           []string{"bwv", "-t", "token"},
+			expectedError:  false,
+			expectedOutput: "",
+			mocks: func() {
+				transport.DefaultHttpClient = &transport.MockHttpClient{}
+			},
+		},
+		{
+			name:           "root command fails if no path specified",
+			args:           []string{"bwv", "-t", "token", "-p", "something"},
+			expectedError:  true,
+			expectedOutput: "Error: no path specified",
+			mocks: func() {
+				transport.DefaultHttpClient = &transport.MockHttpClient{}
+			},
+		},
 	}
-	if !found {
-		t.Errorf("Expected test command to be a subcommand of root command")
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			teardownSuite := setupSuite(t)
+			defer teardownSuite(t)
+
+			test.mocks()
+
+			// Create a new buffer to capture the command's output
+			var logbuf bytes.Buffer
+			log.SetOutput(&logbuf)
+
+			of := fatal
+			defer func() {
+				fatal = of
+				log.SetFlags(log.Flags() & (log.Ldate | log.Ltime))
+			}()
+			fatal = func(format string, v ...interface{}) {
+				log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+				log.Printf(format, v...)
+			}
+
+			// Set the command's output to the buffer
+			var buf *bytes.Buffer = new(bytes.Buffer)
+			rootCmd.SetOutput(buf)
+
+			os.Args = test.args
+			// Execute the root command
+			Execute()
+
+			// Verify that the output contains the expected string
+			if test.expectedError {
+				actualOutput := logbuf.String()
+				if !strings.Contains(actualOutput, test.expectedOutput) {
+					t.Fatalf("Expected log output to contain %q but got %q", test.expectedOutput, logbuf.String())
+				}
+				return
+			}
+
+			actualOutput := buf.String()
+			if !strings.Contains(actualOutput, test.expectedOutput) {
+				t.Fatalf("Expected output to contain %q but got %q", test.expectedOutput, buf.String())
+			}
+		})
 	}
 }

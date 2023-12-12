@@ -16,19 +16,15 @@
 package config
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 
 	"github.com/caarlos0/env/v10"
 	"gopkg.in/yaml.v2"
 
-	"github.com/notapipeline/bwv/pkg/cache"
-	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/types"
 )
@@ -36,8 +32,8 @@ import (
 // These functions are referenced as variables to enable them to
 // be mocked in tests
 var (
-	ConfigPath func(m ConfigMode) string = getConfigPath
-	getSecrets func() map[string]string  = tools.GetSecretsFromUserEnvOrStore
+	ConfigPath func(m ConfigMode) string      = getConfigPath
+	GetSecrets func(v bool) map[string]string = tools.GetSecretsFromUserEnvOrStore
 )
 
 type Config struct {
@@ -57,7 +53,8 @@ const (
 )
 
 func New() *Config {
-	return &Config{}
+	c := Config{}
+	return &c
 }
 
 // Load the config file from user local config directory
@@ -88,7 +85,7 @@ func (c *Config) loadYaml(m ConfigMode) (err error) {
 		return
 	}
 	if yamlFile, err = os.ReadFile(cp); err != nil {
-		return err
+		return
 	}
 
 	log.Printf("Loading config file %s\n", cp)
@@ -111,7 +108,7 @@ func (c *Config) MergeClientConfig(cmd types.ClientCmd) {
 	}
 }
 
-func (c *Config) MergeServerConfig(cmd types.ServeCmd) {
+func (c *Config) MergeServerConfig(cmd *types.ServeCmd) {
 	if len(cmd.Whitelist) > 0 {
 		c.Server.Whitelist = cmd.Whitelist
 	}
@@ -144,6 +141,9 @@ func (c *Config) MergeServerConfig(cmd types.ServeCmd) {
 	if cmd.SkipVerify {
 		c.Server.SkipVerify = cmd.SkipVerify
 	}
+	if cmd.Autoload {
+		c.Server.Autoload = cmd.Autoload
+	}
 }
 
 func (c *Config) IsSecure() (secure bool) {
@@ -153,43 +153,23 @@ func (c *Config) IsSecure() (secure bool) {
 	return
 }
 
-func DeriveHttpGetAPIKey(partial string) string {
-	var (
-		c   []byte
-		err error
-		kdf types.KDFInfo = types.KDFInfo{
-			Type:       types.KDFTypePBKDF2,
-			Iterations: 1,
-		}
-	)
-	if c, err = crypto.DeriveMasterKey(cache.MasterPassword(), partial, kdf); err != nil {
-		log.Fatal(err)
-	}
-	return base64.StdEncoding.EncodeToString(c)
-}
-
-func CreateToken() string {
-	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
-	b := make([]rune, 32)
-	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
-	}
-	return string(b)
-}
-
-func (c *Config) AddApiKey(hostOrCidr string) (string, error) {
-	var (
-		token string = CreateToken()
-		key          = DeriveHttpGetAPIKey(token)
-	)
-
+func (c *Config) SetApiKey(address string, token types.CipherString) error {
 	if c.Server.ApiKeys == nil {
 		c.Server.ApiKeys = make(map[string]string)
 	}
-	c.Server.ApiKeys[hostOrCidr] = key
+	if _, ok := c.Server.ApiKeys[address]; ok {
+		return fmt.Errorf("token already exists for address %s", address)
+	}
+	c.Server.ApiKeys[address] = token.String()
+	return c.Save()
+}
 
-	var err error = c.Save()
-	return token, err
+func (c *Config) DeleteApiKey(address string) error {
+	if _, ok := c.Server.ApiKeys[address]; !ok {
+		return fmt.Errorf("no token exists for address %s", address)
+	}
+	delete(c.Server.ApiKeys, address)
+	return c.Save()
 }
 
 func (c *Config) Save() (err error) {
@@ -218,36 +198,35 @@ func getConfigPath(m ConfigMode) string {
 	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
 }
 
-func (c *Config) RevokeApiKey(what string) (string, error) {
-	var (
-		keys        map[string]string = make(map[string]string)
-		revokedHost string            = ""
-		derivedWhat string            = DeriveHttpGetAPIKey(what)
-		err         error
-	)
-
-	for host, key := range c.Server.ApiKeys {
-		if host == what || key == derivedWhat {
-			revokedHost = host
-			continue
-		}
-		keys[host] = key
-	}
-	c.Server.ApiKeys = keys
-	err = c.Save()
-	return revokedHost, err
-}
-
 func (c *Config) CheckApiKey(addr, key string) bool {
+	secrets := GetSecrets(false)
 	if addr == "127.0.0.1" || tools.ContainsIp("127.0.0.1/24", addr) {
-		secrets := getSecrets()
 		if key == secrets["BW_CLIENTSECRET"] || key == secrets["BW_PASSWORD"] {
 			return true
 		}
+		return false
 	}
 
-	// encrypt the token for comparison
-	key = DeriveHttpGetAPIKey(key)
+	if key == secrets["BW_CLIENTSECRET"] || key == secrets["BW_PASSWORD"] {
+		// If either of these come from anywhere other than localhost, we want
+		// to kill the server and prevent unlock from taking place as this may
+		// indicate a compromise of either the client secret or the master
+		// password (or both)
+		//
+		// If this is reached, the user should change their master password and
+		// client secret immediately.
+		log.Println("-----------------------------------------------------------------------------------------------")
+		log.Println("[FATAL] Possible compromise detected")
+		log.Printf("        One of BW_CLIENTSECRET or BW_PASSWORD was used to authenticate from %s\n", addr)
+		log.Println("        To protect the integrity of your vault, the server will now shut down and will not be restarted")
+		log.Println("        Please change your master password and client secret immediately")
+		log.Println("-----------------------------------------------------------------------------------------------")
+		_ = os.WriteFile("/tmp/bwv-compromised", []byte("1"), 0600)
+		log.Println("If this was a mistake or you have changed your master password and client secret, you can delete /tmp/bwv-compromised and restart the server")
+		log.Fatal("dead")
+		return false
+	}
+
 	for ip, k := range c.Server.ApiKeys {
 		if k == key && (ip == addr || tools.ContainsIp(ip, addr)) {
 			return true

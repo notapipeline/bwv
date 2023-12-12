@@ -1,0 +1,112 @@
+{
+  "LoginResponse": {
+    "kdf": 0,
+    "kdfIterations": 800000,
+    "MasterPasswordPolicy": null,
+    "ForcePasswordReset": false,
+    "Key": "2.i/7aEu9Pc3WI8hvaADB/Fg==|gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4=",
+    "PrivateKey": "--- FAKE PRIVATE KEY ---\n123456789123456789123456\n--- FAKE PRIVATE KEY ---",
+    "ResetMasterPassword": false,
+    "TwoFactorToken": "",
+    "UserDecryptionOptions": {
+      "HasMasterPassword": true,
+      "Object": "userDecryptionOptions"
+    },
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+    "expires_in": 3600,
+    "token_type": "Bearer",
+    "refresh_token": ""
+  },
+  "DeviceID": "bwv",
+  "KDF": {
+    "kdf": 0,
+    "kdfIterations": 1000
+  },
+  "LastSync": "0001-01-01T00:00:00Z",
+  "Sync": {
+    "Profile": {
+      "ID": "d2e23370-94d7-4b86-8518-afa923929a55",
+      "Name": "Test User",
+      "Email": "email@example.com",
+      "EmailVerified": true,
+      "Premium": true,
+      "MasterPasswordHint": "Not a real account",
+      "Culture": "en-US",
+      "TwoFactorEnabled": true,
+      "Key": "2.i/7aEu9Pc3WI8hvaADB/Fg==|gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4=",
+      "PrivateKey": "--- FAKE PRIVATE KEY ---\n123456789123456789123456\n--- FAKE PRIVATE KEY ---",
+      "SecurityStamp": "0cfb128b-6ee4-4bec-a254-3d6fb5dab8a9",
+      "Organizations": []
+    },
+    "Folders": [
+      {
+        "ID": "79477330-c18a-42e5-aad5-9e9f1327b355",
+        "Name": "mockfolder",
+        "RevisionDate": "2021-04-28T09:02:44.0866667Z"
+      }
+    ],
+    "Ciphers": [
+      {
+        "Type": 1,
+        "ID": "7501cb8e-2adc-4941-9758-8b09b95637ac",
+        "Name": "testkey",
+        "Edit": true,
+        "RevisionDate": "2022-10-01T18:15:30.6666667Z",
+        "FolderID": "79477330-c18a-42e5-aad5-9e9f1327b355",
+        "Login": {
+          "Password": "password",
+          "URI": "http://www.example.com",
+          "URIs": [
+            {
+              "URI": "http://www.example.com",
+              "Match": 0
+            }
+          ],
+          "Username": "testuser",
+          "Totp": "otp://not-real"
+        },
+        "Fields": [
+          {
+            "Type": 1,
+            "Name": "example",
+            "Value": "value"
+          }
+        ]
+      },
+      {
+        "Type": 2,
+        "ID": "1a6679c2-f53c-443b-9587-3cddc124e84d",
+        "Name": "some-cipher-with-attachment",
+        "Edit": true,
+        "RevisionDate": "2021-07-31T14:42:27.3733333Z",
+        "FolderID": "79477330-c18a-42e5-aad5-9e9f1327b355",
+        "Attachments": [
+          {
+            "fileName": "filename.unc",
+            "id": "WADDea3OW459JlYtPQ4cpsEB3fNr4YVb",
+            "key": "key that gets reencrypted",
+            "object": "attachment",
+            "size": "1825",
+            "sizeName": "1.78 KB",
+            "url": "https://cdn.bitwarden.net/attachments/1a6679c2-f53c-443b-9587-3cddc124e84d/WADDea3OW459JlYtPQ4cpsEB3fNr4YVb"
+          }
+        ],
+        "Fields": [
+          {
+            "Type": 0,
+            "Name": "username",
+            "Value": "testuser"
+          },
+          {
+            "Type": 1,
+            "Name": "password",
+            "Value": "some-randon-super-strong-password"
+          }
+        ],
+        "SecureNote": {
+          "Type": 0
+        }
+      }
+    ]
+  }
+}

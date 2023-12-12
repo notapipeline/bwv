@@ -17,11 +17,9 @@ package bitw
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"strconv"
 
 	"github.com/notapipeline/bwv/pkg/cache"
@@ -46,7 +44,7 @@ func urlValues(pairs ...string) url.Values {
 
 // ApiLogin retrieves an API token from the Bitwarden API by sending the
 // users client_id and client_secret.
-func ApiLogin(s map[string]string) (*types.LoginResponse, error) {
+func (b *Bwv) ApiLogin(s map[string]string) (*types.LoginResponse, error) {
 	log.Println("executing api login")
 	var lr types.LoginResponse
 	login := urlValues(
@@ -60,20 +58,15 @@ func ApiLogin(s map[string]string) (*types.LoginResponse, error) {
 	)
 
 	ctx := context.Background()
-	err := transport.DefaultHttpClient.Post(ctx, Endpoint.IdtServer+"/connect/token", &lr, login)
+	err := transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &lr, login)
 	if err != nil {
 		return nil, err
 	}
 
-	if secrets, err = cache.Instance(s["BW_PASSWORD"], s["BW_EMAIL"], lr.KDFInfo); err != nil {
+	if b.Secrets, err = cache.Instance(s["BW_PASSWORD"], s["BW_EMAIL"], lr.KDFInfo); err != nil {
 		return nil, fmt.Errorf("Could not create secret cache: %w", err)
 	}
 
-	var b []byte
-	if b, err = json.Marshal(lr); err != nil {
-		return nil, err
-	}
-	_ = os.WriteFile("lr.json", b, 0600)
 	return &lr, nil
 }
 
@@ -83,7 +76,7 @@ func ApiLogin(s map[string]string) (*types.LoginResponse, error) {
 // # Users will be prompted to enter the 2FA token on the command line if required
 //
 // This method should not be used for background services - use ApiLogin instead
-func UserLogin(hashedPassword, email string) (*types.LoginResponse, error) {
+func (b *Bwv) UserLogin(hashedPassword, email string) (*types.LoginResponse, error) {
 	log.Println("executing user login")
 	login := urlValues(
 		"grant_type", "password",
@@ -98,7 +91,7 @@ func UserLogin(hashedPassword, email string) (*types.LoginResponse, error) {
 
 	var lr types.LoginResponse
 	ctx := context.Background()
-	if err := transport.DefaultHttpClient.Post(ctx, Endpoint.IdtServer+"/connect/token", &lr, login); err != nil {
+	if err := transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &lr, login); err != nil {
 		var (
 			tfa *transport.TwoFactorRequiredError
 			ok  bool
@@ -118,7 +111,7 @@ func UserLogin(hashedPassword, email string) (*types.LoginResponse, error) {
 			login.Set("twoFactorToken", token)
 			login.Set("twoFactorRemember", "1")
 
-			if err := transport.DefaultHttpClient.Post(ctx, Endpoint.IdtServer+"/connect/token", &lr, login); err != nil {
+			if err := transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &lr, login); err != nil {
 				var errsc *transport.TwoFactorRequiredError
 				if errsc, ok = err.(*transport.TwoFactorRequiredError); ok && errsc.ErrorModel != nil {
 					continue
@@ -138,18 +131,34 @@ func UserLogin(hashedPassword, email string) (*types.LoginResponse, error) {
 // This information is public in that it can always be retrieved by POSTing the
 // users email address to the prelogin endpoint however this is a heavily rate
 // limited endpoint and is likely to be blocked if used too frequently.
-func prelogin(password, email string) (hashed string, err error) {
+func (b *Bwv) prelogin(password, email string) (hashed string, err error) {
 	log.Println("executing pre-login stage")
 	var preLogin types.KDFInfo
-	if err = transport.DefaultHttpClient.Post(context.Background(), Endpoint.ApiServer+"/accounts/prelogin", &preLogin, preLoginRequest{
+	if err = transport.DefaultHttpClient.Post(context.Background(), b.Endpoint.ApiServer+"/accounts/prelogin", &preLogin, preLoginRequest{
 		Email: email,
 	}); err != nil {
 		return "", fmt.Errorf("Could not retrieve pre-login data: %w", err)
 	}
 
-	if secrets, err = cache.Instance(password, email, preLogin); err != nil {
+	if b.Secrets, err = cache.Instance(password, email, preLogin); err != nil {
 		return "", fmt.Errorf("Could not create secret cache: %w", err)
 	}
-	secrets.KDF = preLogin
-	return secrets.HashPassword(password), nil
+	b.Secrets.KDF = preLogin
+	return b.Secrets.HashPassword(password), nil
+}
+
+// Refresh login auth
+func (b *Bwv) Refresh(ctx context.Context, lr *types.LoginResponse) error {
+	log.Println("executing refresh")
+	var refresh types.LoginResponse
+	if err := transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &refresh, urlValues(
+		"grant_type", "refresh_token",
+		"refresh_token", lr.RefreshToken,
+		"scope", "api offline_access",
+		"client_id", "browser",
+	)); err != nil {
+		return fmt.Errorf("Could not refresh login: %w", err)
+	}
+	*lr = refresh
+	return nil
 }

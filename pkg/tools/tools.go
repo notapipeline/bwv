@@ -79,7 +79,7 @@ func getSecret(what string) string {
 // 1. Environment
 // 2. Secrets store
 // 3. User input
-func GetSecretsFromUserEnvOrStore() map[string]string {
+func GetSecretsFromUserEnvOrStore(userInteractive bool) map[string]string {
 	secrets := map[string]string{
 		"BW_CLIENTID":     "",
 		"BW_CLIENTSECRET": "",
@@ -95,9 +95,9 @@ func GetSecretsFromUserEnvOrStore() map[string]string {
 			value = getSecret(k)
 		}
 
-		switch k {
-		case "BW_PASSWORD", "BW_EMAIL":
-			if value == "" {
+		if value == "" && userInteractive {
+			switch k {
+			case "BW_PASSWORD", "BW_EMAIL":
 				value, _ = ReadLine(k + ": ")
 			}
 		}

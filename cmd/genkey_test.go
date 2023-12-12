@@ -50,11 +50,11 @@ func TestGenkeyCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
-					Body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
+					Body: []byte(`{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`),
 				},
 				{
 					Code: 200,
-					Body: `{"statuscode": 200, "message":"stored token for address localhost"}`,
+					Body: []byte(`{"statuscode": 200, "message":"stored token for address localhost"}`),
 				},
 			},
 		},
@@ -69,11 +69,11 @@ func TestGenkeyCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
-					Body: `{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`,
+					Body: []byte(`{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`),
 				},
 				{
 					Code: 0,
-					Body: "",
+					Body: []byte(``),
 				},
 			},
 		},
@@ -90,13 +90,13 @@ func TestGenkeyCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 400,
-					Body: `{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`,
+					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`),
 				},
 				{
 					Code: 400,
-					Body: `{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`,
+					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`),
 				},
 			},
 		},
@@ -130,7 +130,6 @@ func TestGenkeyCmd(t *testing.T) {
 
 			genkeyCmd.Run(genkeyCmd, test.addresses)
 
-			t.Log(buf.String())
 			if test.expectedErr != nil {
 				var (
 					expected string = strings.TrimSpace(test.expectedErr.Error())

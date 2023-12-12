@@ -104,7 +104,7 @@ var genkeyCmd = &cobra.Command{
 		}
 
 		var ctx context.Context = context.Background()
-		var localAddress string = fmt.Sprintf("https://%s:%d", vaultItem.Server, vaultItem.Port)
+		var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 		if err = transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
 			fatal("unable to get kdf info: %q", err)
 			return

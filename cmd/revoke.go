@@ -57,7 +57,7 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 			return
 		}
 
-		var localAddress string = fmt.Sprintf("https://%s:%d", vaultItem.Server, vaultItem.Port)
+		var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 		if err = transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
 			fatal("unable to get kdf info: %q", err)
 			return

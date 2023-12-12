@@ -16,7 +16,6 @@
 package config
 
 import (
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,7 +54,7 @@ server:
 
 	return func(t *testing.T) {
 		ConfigPath = getConfigPath
-		getSecrets = tools.GetSecretsFromUserEnvOrStore
+		GetSecrets = tools.GetSecretsFromUserEnvOrStore
 		cache.Reset()
 	}
 }
@@ -126,59 +125,6 @@ func TestConfig_IsSecure(t *testing.T) {
 	}
 }
 
-func TestDeriveHttpGetAPIKey(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
-		t.Fatal(err)
-	}
-
-	partial := "email@example.com"
-	key := DeriveHttpGetAPIKey(partial)
-	t.Log("Derived API key:", key)
-	if _, err := base64.StdEncoding.DecodeString(key); err != nil {
-		t.Errorf("Expected nil error but got %v", err)
-	}
-}
-
-func TestConfig_AddApiKey(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
-		t.Fatal(err)
-	}
-
-	c := New()
-	var (
-		hostOrCidr string = "example.com"
-		key        string
-		ok         bool
-		err        error
-		token      string
-	)
-
-	if err = c.Load(ConfigModeServer); err != nil {
-		t.Errorf("Expected nil error but got %v", err)
-	}
-
-	if token, err = c.AddApiKey(hostOrCidr); err != nil {
-		t.Fatal(err)
-	}
-
-	if key, ok = c.Server.ApiKeys[hostOrCidr]; !ok {
-		t.Errorf("Expected API key for host %q to be added", hostOrCidr)
-	}
-
-	if key != DeriveHttpGetAPIKey(token) {
-		t.Errorf("Expected API key %q for host %q but got %q", DeriveHttpGetAPIKey(token), hostOrCidr, key)
-	}
-
-	t.Logf("API key for host %q: %q", hostOrCidr, key)
-	if _, err := base64.StdEncoding.DecodeString(key); err != nil {
-		t.Errorf("Expected nil error but got %v", err)
-	}
-}
-
 func TestConfig_Save(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
@@ -217,6 +163,7 @@ func TestConfig_Save(t *testing.T) {
   - 127.0.0.0/24
   cert: cert.pem
   key: key.pem
+  server: ""
   port: 8080
   apikeys:
     example.com: abcdef123456
@@ -225,85 +172,13 @@ func TestConfig_Save(t *testing.T) {
   skipverify: false
   debug: false
   quiet: false
+  autoload: false
 address: ""
 port: 0
 token: ""
 `)
 	if string(data) != string(expectedData) {
 		t.Errorf("Expected saved config file:\n%s===\n\nBut got:\n%s===", string(expectedData), string(data))
-	}
-}
-
-func TestConfig_RevokeApiKey(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
-		t.Fatal(err)
-	}
-	// Create a new config
-	c := New()
-	if err := c.Load(ConfigModeServer); err != nil {
-		t.Errorf("Expected nil error but got %v", err)
-	}
-
-	// Add an API key
-	var (
-		hostOrCidr  string = "example.com"
-		token       string
-		err         error
-		revokedHost string
-	)
-	if token, err = c.AddApiKey(hostOrCidr); err != nil {
-		t.Fatal(err)
-	}
-
-	// Revoke the API key
-	if revokedHost, err = c.RevokeApiKey(token); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify the revoked API key
-	if revokedHost != hostOrCidr {
-		t.Errorf("Expected revoked host %q but got %q", hostOrCidr, revokedHost)
-	}
-	if _, ok := c.Server.ApiKeys[hostOrCidr]; ok {
-		t.Errorf("Expected API key for host %q to be revoked", hostOrCidr)
-	}
-}
-
-func TestConfig_CheckApiKey(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
-		t.Fatal(err)
-	}
-
-	var (
-		c     *Config = New()
-		err   error
-		token string
-	)
-
-	if err = c.Load(ConfigModeServer); err != nil {
-		t.Errorf("Expected nil error but got %v", err)
-	}
-
-	hosts := map[string]string{
-		"example.com":  "",
-		"192.168.0.1":  "",
-		"127.0.0.1/24": "",
-	}
-	for host := range hosts {
-		if token, err = c.AddApiKey(host); err != nil {
-			t.Fatal(err)
-		}
-		hosts[host] = token
-	}
-
-	for host, key := range hosts {
-		if !c.CheckApiKey(host, key) {
-			t.Errorf("Expected API key %q for host %q to be valid", key, host)
-		}
 	}
 }
 
@@ -322,7 +197,7 @@ func TestConfig_CheckApiKey_Localhost(t *testing.T) {
 	// Check the API key for localhost
 	addr := "127.0.0.1"
 	key := "abcdef123456"
-	getSecrets = func() map[string]string {
+	GetSecrets = func(v bool) map[string]string {
 		return map[string]string{
 			"BW_CLIENTSECRET": key,
 		}
@@ -380,12 +255,5 @@ func TestConfig_CheckApiKey_InvalidKey(t *testing.T) {
 
 	if c.CheckApiKey(addr, key) {
 		t.Errorf("Expected API key %q for address %q to be invalid", key, addr)
-	}
-}
-func TestGetConfigPath(t *testing.T) {
-	expectedPath := filepath.Join(os.Getenv("HOME"), ".config/bwv/server.yaml")
-	actualPath := getConfigPath(ConfigModeServer)
-	if actualPath != expectedPath {
-		t.Errorf("Expected config path %q but got %q", expectedPath, actualPath)
 	}
 }

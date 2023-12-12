@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
@@ -47,6 +46,15 @@ type DecryptedCipher struct {
 
 	// attachments will be sent b64encoded
 	Attachments map[string]string `json:"attachments"`
+
+	bwv *Bwv
+}
+
+func NewDecryptedCipher(b *Bwv) *DecryptedCipher {
+	d := &DecryptedCipher{
+		bwv: b,
+	}
+	return d
 }
 
 func (d *DecryptedCipher) Get(what string) (value interface{}) {
@@ -71,15 +79,13 @@ func (d *DecryptedCipher) Get(what string) (value interface{}) {
 	return nil
 }
 
-func decrypt(c types.Secret, name string) DecryptedCipher {
-	d := DecryptedCipher{
-		Type:           int(c.Type),
-		ID:             c.ID,
-		Name:           name,
-		RevisionDate:   c.RevisionDate,
-		FolderID:       c.FolderID,
-		OrganizationID: c.OrganizationID,
-	}
+func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher {
+	d.Type = int(c.Type)
+	d.ID = c.ID
+	d.Name = name
+	d.RevisionDate = c.RevisionDate
+	d.FolderID = c.FolderID
+	d.OrganizationID = c.OrganizationID
 
 	var fieldsMutex = sync.Mutex{}
 	d.Fields = make(map[string]string)
@@ -88,8 +94,8 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 	d.Attachments = make(map[string]string)
 
 	if c.Login != nil {
-		d.Username, _ = secrets.DecryptStr(c.Login.Username)
-		d.Password, _ = secrets.DecryptStr(c.Login.Password)
+		d.Username, _ = d.bwv.Secrets.DecryptStr(c.Login.Username)
+		d.Password, _ = d.bwv.Secrets.DecryptStr(c.Login.Password)
 	}
 
 	var wg sync.WaitGroup
@@ -97,8 +103,8 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 		wg.Add(1)
 		go func(f types.Field) {
 			defer wg.Done()
-			name, _ := secrets.DecryptStr(f.Name)
-			value, _ := secrets.DecryptStr(f.Value)
+			name, _ := d.bwv.Secrets.DecryptStr(f.Name)
+			value, _ := d.bwv.Secrets.DecryptStr(f.Value)
 			fieldsMutex.Lock()
 			d.Fields[name] = value
 			fieldsMutex.Unlock()
@@ -109,7 +115,7 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 		wg.Add(1)
 		go func(a types.Attachment) {
 			defer wg.Done()
-			name, _ := secrets.DecryptStr(*a.FileName)
+			name, _ := d.bwv.Secrets.DecryptStr(*a.FileName)
 			var (
 				size       int
 				err        error
@@ -117,7 +123,7 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 				attachment *types.Attachment
 			)
 
-			if attachment, err = GetAttachmentLocation(c.ID.String(), a); err != nil {
+			if attachment, err = d.GetAttachmentLocation(c.ID.String(), a); err != nil {
 				log.Println(err)
 				return
 			}
@@ -127,7 +133,7 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 				return
 			}
 
-			if value, _ = DecryptUrl(attachment, size); err != nil {
+			if value, _ = d.DecryptUrl(attachment, size); err != nil {
 				log.Println(err)
 				return
 			}
@@ -140,9 +146,9 @@ func decrypt(c types.Secret, name string) DecryptedCipher {
 	return d
 }
 
-func GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, error) {
+func (d *DecryptedCipher) GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, error) {
 	var (
-		apiurl     string = Endpoint.ApiServer + "/ciphers/" + c + "/attachment/" + a.ID
+		apiurl     string = d.bwv.Endpoint.ApiServer + "/ciphers/" + c + "/attachment/" + a.ID
 		req        *http.Request
 		err        error
 		ctx        context.Context = context.Background()
@@ -154,7 +160,7 @@ func GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, err
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+secrets.Data.LoginResponse.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+ d.bwv.Secrets.Data.LoginResponse.AccessToken)
 	log.Println("sending request to", apiurl)
 	if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &attachment); err != nil {
 		log.Println("error sending request to", apiurl, err)
@@ -170,15 +176,15 @@ func GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, err
 	return &attachment, nil
 }
 
-func DecryptUrl(attachment *types.Attachment, expectedSize int) ([]byte, error) {
+func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize int) ([]byte, error) {
 	var (
-		msg              types.SecretResponse
-		decrypted, data  []byte
-		err              error
-		req              *http.Request
-		ctx              context.Context = context.Background()
-		userKey, userMac []byte          = cache.UserKey()
-		key, mac         []byte
+		msg             types.SecretResponse
+		decrypted, data []byte
+		err             error
+		req             *http.Request
+		ctx             context.Context = context.Background()
+		//userKey, userMac []byte          = cache.UserKey()
+		key, mac []byte
 	)
 
 	if req, err = http.NewRequest("GET", attachment.URL, nil); err != nil {
@@ -201,7 +207,7 @@ func DecryptUrl(attachment *types.Attachment, expectedSize int) ([]byte, error) 
 		return nil, err
 	}
 
-	if key, err = crypto.DecryptWith(*attachment.Key, userKey, userMac); err != nil {
+	if key, err = d.bwv.Secrets.Decrypt(*attachment.Key); err != nil {
 		log.Println("error decrypting", attachment.URL, err)
 		return nil, err
 	}

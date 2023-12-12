@@ -313,7 +313,8 @@ func decrypt(encType types.CipherStringType, iv, mac, ct, key, keyMac []byte) ([
 		return nil, err
 	}
 
-	if encType == types.AesCbc256_HmacSha256_B64 {
+	switch encType {
+	case types.AesCbc128_HmacSha256_B64, types.AesCbc256_HmacSha256_B64:
 		if len(mac) == 0 || len(keyMac) == 0 {
 			return nil, fmt.Errorf("decrypt: cipher string type expects a MAC")
 		}

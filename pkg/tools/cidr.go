@@ -20,6 +20,33 @@ import (
 	"net"
 )
 
+func IsMachineNetwork(addr string) bool {
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && ipnet.Contains(net.ParseIP(addr)) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsExternalInterface(iface string) bool {
+	ifaces, _ := net.Interfaces()
+	for _, i := range ifaces {
+		if i.Name == iface {
+			return i.Flags&net.FlagLoopback == 0 && i.Flags&net.FlagUp != 0
+		}
+	}
+	return false
+}
+
+// IsLocal returns true if the given address is a local address
+
 // ContainsIp returns true if the given IP is in the given network
 func ContainsIp(netw string, ip string) bool {
 	if hosts := CidrHosts(netw); hosts != nil {

@@ -17,13 +17,18 @@ package transport
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"reflect"
+
+	backoff "github.com/cenkalti/backoff/v4"
+	"github.com/notapipeline/bwv/pkg/types"
 )
 
 type MockHttpResponse struct {
 	Code int
-	Body string
+	Body []byte
 }
 
 // MockHttpClient is a mock implementation of the HttpClient interface
@@ -61,6 +66,22 @@ func (m *MockHttpClient) Do(ctx context.Context, req *http.Request, recv any) er
 	case 429, 500, 502, 503, 504:
 		return m.Do(ctx, req, recv)
 	}
-	err := json.Unmarshal([]byte(response.Body), recv)
+
+	var err error
+	if err = json.Unmarshal(response.Body, recv); err != nil {
+		// JSON can't decode attachments as they aren't in JSON format.
+		// therefore we're normally passing in a SecretResponse object.
+		if secretResponse, ok := recv.(*types.SecretResponse); ok {
+			secretResponse.Message = base64.StdEncoding.EncodeToString(response.Body)
+			recv = secretResponse //nolint:golint,ineffassign
+			return nil
+		}
+
+		// for anything else, return the error
+		err = &backoff.PermanentError{Err: &json.UnmarshalTypeError{
+			Value: "body", Type: reflect.TypeOf(recv)},
+		}
+	}
+
 	return err
 }

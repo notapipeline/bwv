@@ -16,13 +16,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
 
-	"github.com/notapipeline/bwv/pkg/config"
+	"github.com/notapipeline/bwv/pkg/bitw"
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/tools"
+	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 
 	"github.com/twpayne/go-pinentry"
@@ -31,12 +34,18 @@ import (
 var email string
 
 var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
+	if clientCmd.Debug {
+		debug.PrintStack()
+	}
 	log.Fatalf(format, v...)
 }
 
 var createToken func() string = func() string {
-	return config.CreateToken()
+	b := new(bitw.Bwv)
+	return b.CreateToken()
 }
+
+var getSecretsFromUserEnvOrStore func(v bool) map[string]string = tools.GetSecretsFromUserEnvOrStore
 
 var clientEncrypt = func(password, email, address string, kdf types.KDFInfo) (string, error) {
 	return crypto.ClientEncrypt(password, email, address, kdf)
@@ -85,4 +94,43 @@ var getPinentry func(options ...pinentry.ClientOption) (c *pinentry.Client, err 
 
 var readPassword func(prompt string) (string, error) = func(prompt string) (string, error) {
 	return tools.ReadPassword(prompt)
+}
+
+func getKdf() (kdf types.KDFInfo) {
+	var ctx context.Context = context.Background()
+	var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+	if err := transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
+		fatal("unable to get kdf info: %q", err)
+	}
+	return
+}
+
+func getEncryptedToken() string {
+	var (
+		secrets map[string]string = getSecretsFromUserEnvOrStore(false)
+		err     error
+		token   string
+		kdf     types.KDFInfo = getKdf()
+	)
+
+	if clientCmd.Token == "" {
+		if t, ok := secrets["BW_CLIENTSECRET"]; ok {
+			clientCmd.Token = t
+		} else {
+			clientCmd.Token = secrets["BW_PASSWORD"]
+		}
+	}
+
+	if clientCmd.Token == "" {
+		if err = loadClientConfig(); err != nil {
+			return ""
+		}
+	}
+
+	token, err = crypto.ClientEncrypt(secrets["BW_PASSWORD"], secrets["BW_EMAIL"], clientCmd.Token, kdf)
+	if err != nil {
+		fatal("failed to encrypt token : %q", err)
+	}
+
+	return token
 }

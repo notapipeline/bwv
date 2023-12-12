@@ -16,8 +16,6 @@
 package types
 
 import (
-	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,7 +49,7 @@ type Organization struct {
 	Enabled         bool
 }
 
-// Profile is a Bitwarden profile.
+// Profile is the users profile information.
 type Profile struct {
 	ID                 uuid.UUID
 	Name               string
@@ -124,6 +122,7 @@ type Login struct {
 	Totp     string       `json:",omitempty"`
 }
 
+// URI is the URI associated with a login.
 type URI struct {
 	URI   string
 	Match URIMatch
@@ -134,13 +133,16 @@ type SecureNote struct {
 	Type SecureNoteType
 }
 
+// UserDecryptionOptions are the options used to decrypt a user's data.
 type UserDecryptionOptions struct {
 	HasMasterPassword bool
 	Object            string
 }
 
+// MasterPasswordPolicy is the policy used to enforce a master password.
 type MasterPasswordPolicy map[string]interface{}
 
+// LoginResponse is returned from the login endpoint. (POST /identity/connect/token)
 type LoginResponse struct {
 	KDFInfo
 	MasterPasswordPolicy *MasterPasswordPolicy
@@ -158,36 +160,17 @@ type LoginResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// DataFile is the data file stored in memory.
 type DataFile struct {
 	LoginResponse *LoginResponse
 	DeviceID      string
 	KDF           KDFInfo
 	LastSync      time.Time
 	Sync          SyncData
+	Session       CipherString
 }
 
-type TwoFactorProvider int
-
-func (t *TwoFactorProvider) UnmarshalText(text []byte) error {
-	i, err := strconv.Atoi(string(text))
-	if err != nil || i < 0 || i >= TwoFactorProviderMax {
-		return fmt.Errorf("invalid two-factor auth provider: %q", text)
-	}
-	*t = TwoFactorProvider(i)
-	return nil
-}
-
-func (t TwoFactorProvider) Line(extra map[string]interface{}) string {
-	switch t {
-	case Authenticator:
-		return "Six-digit authenticator token: "
-	case Email:
-		emailHint := extra["Email"].(string)
-		return fmt.Sprintf("Six-digit email token (%s): ", emailHint)
-	}
-	return fmt.Sprintf("unsupported two factor auth provider %d", t)
-}
-
+// SecretResponse is returned between the `bwv` server and client
 type SecretResponse struct {
 	Message interface{} `json:"message"`
 }

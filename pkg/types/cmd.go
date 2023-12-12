@@ -15,10 +15,13 @@
  */
 package types
 
+import "log"
+
 type ServeCmd struct {
 	Whitelist  []string          `yaml:"whitelist" env:"BW_WHITELIST" envSeparator:","`
 	Cert       string            `yaml:"cert" env:"BW_CERT"`
 	Key        string            `yaml:"key" env:"BW_KEY"`
+	Server     string            `yaml:"server" env:"BW_SERVER"`
 	Port       int               `yaml:"port" env:"BW_PORT"`
 	ApiKeys    map[string]string `yaml:"apikeys" env:"BW_APIKEYS" envSeparator:","`
 	Org        string            `yaml:"org" env:"BW_ORG"`
@@ -26,11 +29,44 @@ type ServeCmd struct {
 	SkipVerify bool              `yaml:"skipverify" env:"BW_SKIPVERIFY"`
 	Debug      bool              `yaml:"debug" env:"BW_DEBUG"`
 	Quiet      bool              `yaml:"quiet" env:"BW_QUIET"`
+	Autoload   bool              `yaml:"autoload" env:"BW_AUTOLOAD"`
+}
+
+func (s *ServeCmd) Merge(c *ClientCmd) {
+	if s.Server == "" {
+		s.Server = c.Server
+	}
+	if s.Port == 0 {
+		s.Port = c.Port
+	}
+	if !s.SkipVerify {
+		s.SkipVerify = c.SkipVerify
+	}
+
+	if !s.Debug {
+		s.Debug = c.Debug
+	}
+
+	if !s.Quiet {
+		s.Quiet = c.Quiet
+	}
+	log.Printf("%+v\n%+v", s, c)
 }
 
 type ClientCmd struct {
 	Server     string `yaml:"server" env:"BW_SERVER"`
 	Port       int    `yaml:"port" env:"BW_PORT"`
 	SkipVerify bool   `yaml:"skipverify" env:"BW_SKIPVERIFY"`
+	Debug      bool   `yaml:"debug" env:"BW_DEBUG"`
+	Quiet      bool   `yaml:"quiet" env:"BW_QUIET"`
 	Token      string `yaml:"token" env:"BW_TOKEN"`
+}
+
+type VaultItem struct {
+	Path        string
+	Fields      []string
+	Parameters  []string
+	Attachments []string
+	Notes       bool
+	SecureNotes bool
 }

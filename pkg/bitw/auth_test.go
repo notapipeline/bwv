@@ -43,7 +43,8 @@ func TestPrelogin(t *testing.T) {
 	expectedHashedPassword := "0GA3u/K3oddElx6cM1ztGEz4RI97+wBWflDkI4CRfsE="
 
 	// Call the Prelogin function
-	hashedPassword, err := prelogin("password", "test@example.com")
+	var b *Bwv = NewBwv()
+	hashedPassword, err := b.prelogin("password", "test@example.com")
 
 	// Verify the result
 	if err != nil {
@@ -65,8 +66,9 @@ func TestPreloginFailsOnCreateSecretCache(t *testing.T) {
 		return nil, fmt.Errorf("Could not create secret cache")
 	}
 
+	var b *Bwv = NewBwv()
 	// Call the Prelogin function
-	_, err := prelogin("password", "test@example.com")
+	_, err := b.prelogin("password", "test@example.com")
 
 	// Verify the result
 	if err == nil {
@@ -86,8 +88,9 @@ func TestPreFailsOnPostlogin(t *testing.T) {
 		}, nil
 	}
 
+	var b *Bwv = NewBwv()
 	// Call the Prelogin function
-	_, err := prelogin("password", "test@example.com")
+	_, err := b.prelogin("password", "test@example.com")
 
 	// Verify the result
 	if err == nil {

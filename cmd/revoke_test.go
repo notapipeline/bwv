@@ -49,11 +49,11 @@ func TestRevokeCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
-					Body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
+					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
 				},
 				{
 					Code: 200,
-					Body: `{"statuscode": 200, "message":"Token revoked for address 127.0.0.1"}`,
+					Body: []byte(`{"statuscode": 200, "message":"Token revoked for address 127.0.0.1"}`),
 				},
 			},
 		},
@@ -69,11 +69,11 @@ func TestRevokeCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
-					Body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
+					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
 				},
 				{
 					Code: 0,
-					Body: "",
+					Body: []byte(``),
 				},
 			},
 		},
@@ -89,11 +89,11 @@ func TestRevokeCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
-					Body: `{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`,
+					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
 				},
 				{
 					Code: 0,
-					Body: "",
+					Body: []byte(``),
 				},
 			},
 		},
@@ -110,13 +110,13 @@ func TestRevokeCmd(t *testing.T) {
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 400,
-					Body: `{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`,
+					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`),
 				},
 				{
 					Code: 400,
-					Body: `{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`,
+					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
+						` Connect to a different network or try again later. [Error Code 6]"}`),
 				},
 			},
 		},

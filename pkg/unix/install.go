@@ -1,3 +1,5 @@
+//go:build !windows
+
 /*
  *   Copyright 2022 Martin Proffitt <mproffitt@choclab.net>
  *
@@ -13,7 +15,6 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-//go:build !windows
 
 package unix
 
@@ -57,22 +58,30 @@ func InstallService(serviceName string) error {
 		err         error
 		service     string = fmt.Sprintf("%s.service", serviceName)
 		servicePath string = filepath.Join(home, ".config/systemd/user", service)
+		file        *os.File
 	)
 
 	log.Printf("Creating service file %s\n", servicePath)
-	file, err := os.Create(servicePath)
-	if err != nil {
+	if file, err = os.Create(servicePath); err != nil {
 		return fmt.Errorf("Unable to create service file: %v", err)
 	}
-	file.WriteString(SYSTEMFILE)
-	file.Sync()
+
+	if _, err = file.WriteString(SYSTEMFILE); err != nil {
+		return fmt.Errorf("Unable to write service file: %v", err)
+	}
+
+	if err = file.Sync(); err != nil {
+		return fmt.Errorf("Unable to sync service file: %v", err)
+	}
 	file.Close()
 
 	log.Printf("Enabling systemd user service '%s' and reloading daemon\n", serviceName)
 	var files []string = []string{service}
-	_, _, err = systemd.EnableUnitFilesContext(context.Background(), files, false, true)
-	if err != nil {
-		return fmt.Errorf("Failed to enable the %s service: %v", serviceName, err)
+	{
+		_, _, err = systemd.EnableUnitFilesContext(context.Background(), files, false, true)
+		if err != nil {
+			return fmt.Errorf("Failed to enable the %s service: %v", serviceName, err)
+		}
 	}
 
 	if err = systemd.ReloadContext(context.Background()); err != nil {
