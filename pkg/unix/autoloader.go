@@ -32,6 +32,16 @@ type Autoloader struct {
 	envPath string
 }
 
+// NewAutoloader creates a new autoloader object
+//
+// The autoloader pulls all values from the vault and iterates over them to
+// discover ciphers marked for autoloading.
+//
+// As this function pulls all values from the vault and requires everything to
+// be decrypted, it should only be called periodically as it is fairly resource
+// intensive. Additionally it will load all attachments temporarily into memory
+// during discovery, so it is not recommended to use this function on large
+// vaults.
 func NewAutoloader(bwv *bitw.Bwv) *Autoloader {
 	var path string = filepath.Join(os.Getenv("HOME"), ".config", "bwv", "environment")
 
@@ -100,6 +110,13 @@ func (a *Autoloader) AutoLoad(bwv *bitw.Bwv) error {
 	return nil
 }
 
+// createEnvironmentFile creates an environment file for the given cipher
+//
+// Each cipher will be given its own environment file, named after the cipher
+// created in the directory ~/.config/bwv/environment
+//
+// if the directory does not exists, it will be created with permissions 0700
+// and the environment files created with permissions 0600.
 func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.DecryptedCipher) (err error) {
 	var (
 		name      string
@@ -133,9 +150,9 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 	for _, e := range environment {
 		e = strings.TrimSpace(e)
 		if v := c.Get(e); v != "" {
-			envData += fmt.Sprintf("%s_%s=%s\n", envPrefix, strings.ToUpper(e), v)
+			envData += fmt.Sprintf("export %s_%s=%s\n", envPrefix, strings.ToUpper(e), v)
 		} else if v, ok := c.Fields[e]; ok && v != "" {
-			envData += fmt.Sprintf("%s_%s=%s\n", envPrefix, strings.ToUpper(e), v)
+			envData += fmt.Sprintf("export %s_%s=%s\n", envPrefix, strings.ToUpper(e), v)
 		}
 	}
 
@@ -145,6 +162,7 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 	return
 }
 
+// addCipherKeys adds the attachments from the given cipher to the agents
 func (a *Autoloader) addCipherKeys(autoload string, c *bitw.DecryptedCipher) (errors []error) {
 	var attachments map[string]string
 	switch autoload {
@@ -234,6 +252,10 @@ func (a *Autoloader) addSSHKey(key, passphrase []byte, filename string) error {
 	return nil
 }
 
+// getFingerprint returns the fingerprint of a given PGP key
+//
+// The fingerprint of the key is required to lookup the key in
+// the gpg-agent in order to retrieve the keygrip(s).
 func (a *Autoloader) getFingerprint(key []byte) (string, error) {
 	var (
 		els         openpgp.EntityList
@@ -256,14 +278,11 @@ func (a *Autoloader) getFingerprint(key []byte) (string, error) {
 	return fingerprint, nil
 }
 
+// getKeygrips returns all keygrips for a given PGP key
+//
+// Each part in the key contains a keygrip which identifies the public key
+// parameters expressed as a sha1 hash of length 20.
 func (a *Autoloader) getKeygrips(fingerprint string) (kg []string, err error) {
-	// Now make sure the key is fully unlocked
-	// for this we need to get the keygrip and then use that to set the passphrase
-	// using the /usr/lib/gnupg2/gpg-preset-passphrase command
-	//
-	// If these steps cannot be completed, it can safely be suppressed as the
-	// key will still be loaded into the agent, but will require the user to
-	// enter the passphrase manually.
 	var (
 		stdout  strings.Builder
 		stderr  strings.Builder
@@ -298,6 +317,13 @@ func (a *Autoloader) getKeygrips(fingerprint string) (kg []string, err error) {
 	return
 }
 
+// unlockKeys unlocks all keys with the given keygrip
+//
+// The keygrip is used to set the passphrase for the key using the command
+// /usr/lib/gnupg2/gpg-preset-passphrase
+//
+// If this command fails, the key will still be loaded into the agent, but will
+// require the user to enter the passphrase manually.
 func unlockKeys(kg string, passphrase []byte) error {
 	var (
 		gpgCmd *exec.Cmd
@@ -375,6 +401,7 @@ func (a *Autoloader) addPGPKey(key, passphrase []byte, filename string) error {
 	return nil
 }
 
+// printBuffers prints the contents of the stdout and stderr buffers
 func printBuffers(stdout, stderr *strings.Builder) {
 	for _, b := range strings.Split(stderr.String(), "\n") {
 		if len(strings.TrimSpace(b)) > 0 {
