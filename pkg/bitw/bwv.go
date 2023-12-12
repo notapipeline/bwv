@@ -203,9 +203,17 @@ func (b *Bwv) Setup() *Bwv {
 		}
 	}
 
-	var active chan bool = make(chan bool)
-	go b.refresh(active)
+	var (
+		active chan bool = make(chan bool)
+		done   chan bool = make(chan bool)
+	)
+	go b.refresh(active, done, true)
 	active <- true
+
+	// Wait for the first sync to complete before continuing
+	// This allows the secret cache to be populated before
+	// we try to store the user session when using UserAuth login
+	<-done
 
 	if len(hashed) > 0 {
 		// The hashed password needs to be stored for re-authentication when the
@@ -237,7 +245,7 @@ func (b *Bwv) Setup() *Bwv {
 // The active channel is used to signal that the token should be refreshed
 // immediately and when triggered, will re-authenticate to the Bitwarden server
 // to update the Access token and sync the local cache.
-func (b *Bwv) refresh(active chan bool) {
+func (b *Bwv) refresh(active, done chan bool, firstRun bool) {
 	for {
 		select {
 		// Refresh the token 5 seconds before it expires to give the client
@@ -280,11 +288,17 @@ func (b *Bwv) refresh(active chan bool) {
 				log.Println(err)
 			}
 
+			// We need to force the calling method to wait until the first sync
+			// has completed before it is allowed to return.
+			if firstRun {
+				firstRun = false
+				done <- true
+			}
+
 			// Call the autoloader if it has been set
 			if b.autoload != nil {
 				*b.autoload <- true
 			}
-
 		}
 	}
 }
