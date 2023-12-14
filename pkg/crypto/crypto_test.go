@@ -198,7 +198,7 @@ func TestEncrypt(t *testing.T) {
 			defer setupSuite(t)(t)
 			setMocks(test.mocks)
 
-			encrypted, err := ClientEncrypt(test.password, test.email, "hello world", test.kdf)
+			encrypted, err := Encrypt([]byte(test.password), test.email, "hello world", test.kdf)
 			if err != nil {
 				if err.Error() != test.expectedError.Error() {
 					t.Errorf("Expected error %q but got %q", test.expectedError.Error(), err.Error())
@@ -206,7 +206,7 @@ func TestEncrypt(t *testing.T) {
 				return
 			}
 
-			decrypted, err := Decrypt(test.password, test.email, encrypted, test.kdf)
+			decrypted, err := Decrypt([]byte(test.password), test.email, encrypted, test.kdf)
 			if err != nil {
 				if err.Error() != test.expectedError.Error() {
 					t.Errorf("Expected error %q but got %q", test.expectedError.Error(), err.Error())
@@ -530,7 +530,7 @@ func TestDecrypt(t *testing.T) {
 				err       error
 			)
 
-			decrypted, err = Decrypt(test.password, string(test.email), test.cipherString, test.kdf)
+			decrypted, err = Decrypt([]byte(test.password), string(test.email), test.cipherString, test.kdf)
 			if test.expectedError != nil {
 				if err == nil {
 					t.Errorf("Expected error but got nil")

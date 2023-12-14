@@ -45,14 +45,14 @@ var createToken func() string = func() string {
 	return b.CreateToken()
 }
 
-var getSecretsFromUserEnvOrStore func(v bool) map[string]string = tools.GetSecretsFromUserEnvOrStore
+var getSecretsFromUserEnvOrStore func(v bool) map[string][]byte = tools.GetSecretsFromUserEnvOrStore
 
-var clientEncrypt = func(password, email, address string, kdf types.KDFInfo) (string, error) {
-	return crypto.ClientEncrypt(password, email, address, kdf)
+var clientEncrypt = func(password []byte, email, address string, kdf types.KDFInfo) (string, error) {
+	return crypto.Encrypt(password, email, address, kdf)
 }
 
-var getPassword func() (string, error) = func() (string, error) {
-	return func() (string, error) {
+var getPassword func() ([]byte, error) = func() ([]byte, error) {
+	return func() ([]byte, error) {
 		var (
 			err         error
 			client      *pinentry.Client
@@ -68,7 +68,7 @@ var getPassword func() (string, error) = func() (string, error) {
 			pinentry.WithTitle("Master password"),
 		); err != nil {
 			if password, err = readPassword("Please enter your Bitwarden master password: "); err != nil {
-				return "", err
+				return nil, err
 			}
 			usePinentry = false
 		}
@@ -77,14 +77,14 @@ var getPassword func() (string, error) = func() (string, error) {
 			defer client.Close()
 			password, _, err = client.GetPIN()
 			if pinentry.IsCancelled(err) {
-				return "", fmt.Errorf("Cancelled")
+				return nil, fmt.Errorf("Cancelled")
 			}
 		}
 		if password == "" {
-			return "", fmt.Errorf("No password provided")
+			return nil, fmt.Errorf("No password provided")
 		}
 		password = strings.TrimSpace(password)
-		return password, err
+		return []byte(password), err
 	}()
 }
 
@@ -107,7 +107,7 @@ func getKdf() (kdf types.KDFInfo) {
 
 func getEncryptedToken() string {
 	var (
-		secrets map[string]string = getSecretsFromUserEnvOrStore(false)
+		secrets map[string][]byte = getSecretsFromUserEnvOrStore(false)
 		err     error
 		token   string
 		kdf     types.KDFInfo = getKdf()
@@ -115,9 +115,9 @@ func getEncryptedToken() string {
 
 	if clientCmd.Token == "" {
 		if t, ok := secrets["BW_CLIENTSECRET"]; ok {
-			clientCmd.Token = t
+			clientCmd.Token = string(t)
 		} else {
-			clientCmd.Token = secrets["BW_PASSWORD"]
+			clientCmd.Token = string(secrets["BW_PASSWORD"])
 		}
 	}
 
@@ -127,7 +127,7 @@ func getEncryptedToken() string {
 		}
 	}
 
-	token, err = crypto.ClientEncrypt(secrets["BW_PASSWORD"], secrets["BW_EMAIL"], clientCmd.Token, kdf)
+	token, err = crypto.Encrypt(secrets["BW_PASSWORD"], string(secrets["BW_EMAIL"]), clientCmd.Token, kdf)
 	if err != nil {
 		fatal("failed to encrypt token : %q", err)
 	}

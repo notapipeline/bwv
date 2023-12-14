@@ -68,6 +68,21 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			return fmt.Errorf("no path specified")
 		}
 
+		var parts []string
+		if parts = strings.Split(vaultItem.Path, "?"); len(parts) > 1 {
+			vaultItem.Path = parts[0]
+			parts = strings.Split(parts[1], "&")
+			for _, p := range parts {
+				if strings.HasPrefix(p, "fields=") {
+					fields += "," + strings.TrimPrefix(p, "fields=")
+				} else if strings.HasPrefix(p, "properties=") {
+					props += "," + strings.TrimPrefix(p, "properties=")
+				} else if strings.HasPrefix(p, "attachments=") {
+					attachments += "," + strings.TrimPrefix(p, "attachments=")
+				}
+			}
+		}
+
 		clientCmd.Token = getEncryptedToken()
 
 		ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
@@ -109,13 +124,6 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		if b, err = json.Marshal(r.Message); err != nil {
 			return err
 		}
-
-		/*formatter := prettyjson.Formatter{
-			//DisabledColor:   false,
-			Indent:          4,
-			Newline:         "\n",
-			StringMaxLength: 0,
-		}*/
 
 		var structure interface{}
 		if err = json.Unmarshal(b, &structure); err != nil {

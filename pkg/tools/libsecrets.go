@@ -22,6 +22,8 @@ import (
 	"r00t2.io/gosecret"
 )
 
+var service *gosecret.Service
+
 // Gets a secret from libsecrets
 func getSecretFromSecretsService(what string) (string, error) {
 	if os.Getenv("USE_KWALLET") != "" {
@@ -30,7 +32,6 @@ func getSecretFromSecretsService(what string) (string, error) {
 
 	var (
 		err       error
-		service   *gosecret.Service
 		itemAttrs map[string]string
 	)
 

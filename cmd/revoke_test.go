@@ -34,7 +34,7 @@ func TestRevokeCmd(t *testing.T) {
 		password    string
 		kdf         types.KDFInfo
 		expectedErr error
-		getPassword func() (string, error)
+		getPassword func() ([]byte, error)
 		responses   []transport.MockHttpResponse
 	}{
 		{
@@ -43,8 +43,8 @@ func TestRevokeCmd(t *testing.T) {
 			address:     "127.0.0.1",
 			password:    "password",
 			expectedErr: nil,
-			getPassword: func() (string, error) {
-				return "password", nil
+			getPassword: func() ([]byte, error) {
+				return []byte("password"), nil
 			},
 			responses: []transport.MockHttpResponse{
 				{
@@ -63,8 +63,8 @@ func TestRevokeCmd(t *testing.T) {
 			address:     "127.0.0.1",
 			password:    "password",
 			expectedErr: errors.New("invalid email address \"mail: missing '@' or angle-addr\""),
-			getPassword: func() (string, error) {
-				return "password", nil
+			getPassword: func() ([]byte, error) {
+				return []byte("password"), nil
 			},
 			responses: []transport.MockHttpResponse{
 				{
@@ -83,8 +83,8 @@ func TestRevokeCmd(t *testing.T) {
 			address:     "127.0.0.1",
 			password:    "",
 			expectedErr: errors.New("invalid password \"invalid password\""),
-			getPassword: func() (string, error) {
-				return "", errors.New("invalid password")
+			getPassword: func() ([]byte, error) {
+				return nil, errors.New("invalid password")
 			},
 			responses: []transport.MockHttpResponse{
 				{
@@ -101,8 +101,8 @@ func TestRevokeCmd(t *testing.T) {
 			name:    "rate limited",
 			address: "localhost",
 			email:   "test@example.com",
-			getPassword: func() (string, error) {
-				return "", nil
+			getPassword: func() ([]byte, error) {
+				return nil, nil
 			},
 			expectedErr: errors.New(`unable to get kdf info: "Bad Request: ` +
 				`{\"message\":\"Traffic from your network looks unusual. ` +

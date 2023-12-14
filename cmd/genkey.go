@@ -69,7 +69,7 @@ var genkeyCmd = &cobra.Command{
 	falls back to reading from stdin.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
-			password string
+			password []byte
 			err      error
 			kdf      types.KDFInfo
 		)

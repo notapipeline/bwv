@@ -24,7 +24,7 @@ import (
 
 type MaliciousTrafficError struct{}
 
-func (e *MaliciousTrafficError) Error() string {
+func (e MaliciousTrafficError) Error() string {
 	return "Traffic from your network looks unusual. " +
 		"Connect to a different network or try again later."
 }
@@ -45,14 +45,14 @@ type TwoFactorRequiredError struct {
 	MasterPasswordPolicy interface{}
 }
 
-func (e *TwoFactorRequiredError) Error() string {
+func (e TwoFactorRequiredError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Err, e.ErrorDescription)
 }
 
 // {"message":"Slow down! Too many requests. Try again in 1m.","validationErrors":null,"exceptionMessage":null,"exceptionStackTrace":null,"innerExceptionMessage":null,"object":"error"}
 type RateLimitError struct{}
 
-func (e *RateLimitError) Error() string {
+func (e RateLimitError) Error() string {
 	return "Slow down! Too many requests. Try again in 1m."
 }
 
@@ -60,7 +60,7 @@ type ErrInvalidStatusCode struct {
 	Code int
 }
 
-func (e *ErrInvalidStatusCode) Error() string {
+func (e ErrInvalidStatusCode) Error() string {
 	return fmt.Sprintf("Invalid status code %d", e.Code)
 }
 
@@ -71,54 +71,54 @@ type ErrBase struct {
 
 type ErrStatusCode ErrBase
 
-func (e *ErrStatusCode) Error() string {
+func (e ErrStatusCode) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrBadRequest ErrBase
 
-func (e *ErrBadRequest) Error() string {
+func (e ErrBadRequest) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrUnauthorized ErrBase
 
-func (e *ErrUnauthorized) Error() string {
+func (e ErrUnauthorized) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrForbidden ErrBase
 
-func (e *ErrForbidden) Error() string {
+func (e ErrForbidden) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrNotFound ErrBase
 
-func (e *ErrNotFound) Error() string {
+func (e ErrNotFound) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrConflict ErrBase
 
-func (e *ErrConflict) Error() string {
+func (e ErrConflict) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrTooManyRequests ErrBase
 
-func (e *ErrTooManyRequests) Error() string {
+func (e ErrTooManyRequests) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrInternal ErrBase
 
-func (e *ErrInternal) Error() string {
+func (e ErrInternal) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }
 
 type ErrUnknown ErrBase
 
-func (e *ErrUnknown) Error() string {
+func (e ErrUnknown) Error() string {
 	return fmt.Sprintf("%s: %s", http.StatusText(e.Code), e.Body)
 }

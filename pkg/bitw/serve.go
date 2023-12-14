@@ -32,13 +32,16 @@ import (
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
+// DefaultPort for the server to listen on
 const DefaultPort = 6277
 
+// HttpServer serves secrets from a local in-memory cache
 type HttpServer struct {
 	config *config.Config
 	Bwv    *Bwv
 }
 
+// NewHttpServer creates a new HttpServer object
 func NewHttpServer(config *config.Config) *HttpServer {
 	return &HttpServer{
 		config: config,
@@ -46,6 +49,7 @@ func NewHttpServer(config *config.Config) *HttpServer {
 	}
 }
 
+// writeResponseError writes an error response to the client
 func (s *HttpServer) writeResponseError(w *http.ResponseWriter, message string, code int, err error) {
 	var msg string = fmt.Sprintf("error: %d : %q", code, message)
 	if s.config.Server.Debug {
@@ -71,10 +75,12 @@ func (s *HttpServer) writeResponseError(w *http.ResponseWriter, message string, 
 	fmt.Fprint(*w, string(b))
 }
 
+// IsSecure returns true if the server is configured to use TLS
 func (s *HttpServer) IsSecure() (secure bool) {
 	return s.config.IsSecure()
 }
 
+// unique returns a unique list of strings
 func unique(what []string) (unique []string) {
 	unique = make([]string, 0, len(what))
 	m := map[string]bool{}
@@ -88,6 +94,7 @@ func unique(what []string) (unique []string) {
 	return
 }
 
+// parseFields returns a map of field values for the given cipher
 func (s *HttpServer) parseFields(c DecryptedCipher, fields []string) (values map[string]interface{}) {
 	var ok bool
 	fields = unique(fields)
@@ -102,6 +109,7 @@ func (s *HttpServer) parseFields(c DecryptedCipher, fields []string) (values map
 	return
 }
 
+// parseProperties returns a map of property values for the given cipher
 func (s *HttpServer) parseProperties(c DecryptedCipher, properties []string) (values map[string]interface{}) {
 	properties = unique(properties)
 	values = make(map[string]interface{})
@@ -115,6 +123,7 @@ func (s *HttpServer) parseProperties(c DecryptedCipher, properties []string) (va
 	return
 }
 
+// parseAttachments returns a map of attachment values for the given cipher
 func (s *HttpServer) parseAttachments(c DecryptedCipher, attachments []string) (values map[string]interface{}) {
 	attachments = unique(attachments)
 	values = make(map[string]interface{})
@@ -128,6 +137,7 @@ func (s *HttpServer) parseAttachments(c DecryptedCipher, attachments []string) (
 	return
 }
 
+// checkWhiteList returns true if the given address is in the whitelist
 func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 	if tools.IsMachineNetwork(addr) {
 		return true
@@ -150,6 +160,7 @@ func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 	return matched
 }
 
+// validate checks the request is valid
 func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	var (
 		addr  string   = strings.Split(r.RemoteAddr, ":")[0]
@@ -193,14 +204,14 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	log.Println("Checking API key for", addr)
-	if !s.config.CheckApiKey(addr, string(token)) {
+	if !s.config.CheckApiKey(addr, token) {
 		if handshakeToken, err = s.Bwv.Secrets.Encrypt(token); err != nil {
 			s.writeResponseError(&w, "bwv denied the request", http.StatusUnauthorized, err)
 			return false
 		}
 
 		log.Println("checking against whitelist encrypted tokens")
-		if !s.config.CheckApiKey(addr, handshakeToken.String()) {
+		if !s.config.CheckApiKey(addr, handshakeToken.Bytes()) {
 			s.writeResponseError(&w, "bwv denied the request", http.StatusUnauthorized, err)
 			return false
 		}
@@ -209,6 +220,7 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// getPath returns the requested path from the cache
 func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		s.writeResponseError(&w, "bwv denied the request - invalid method", http.StatusMethodNotAllowed, nil)
@@ -234,10 +246,6 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Bwv.Sync(); err != nil {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
-		return
-	}
 	log.Printf("[GET] %s %+v from %s\n", path, r.URL.Query(), addr)
 	if secret, ok = s.Bwv.Get(path); !ok {
 		s.writeResponseError(&w, fmt.Sprintf("Path '%s' not found", path), http.StatusNotFound, nil)
@@ -249,7 +257,6 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	//       and returned the requested fields for each cipher - if there is only
 	//       one cipher then it should return the fields for that cipher or
 	//       `value: <value>` if there is only one field on one cipher requested.
-
 	var responseLen = 0
 	log.Printf("checking for requested fields")
 	if fields, ok := params["fields"]; ok && len(fields) > 0 {

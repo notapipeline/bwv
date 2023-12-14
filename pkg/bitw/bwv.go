@@ -17,6 +17,7 @@ package bitw
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -24,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/awnumar/memguard"
 	"github.com/google/uuid"
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/config"
@@ -42,9 +44,10 @@ type Server struct {
 }
 
 const (
-	CHUNKSIZE int      = 5
-	EU        Location = "eu"
-	GLOBAL    Location = "com"
+	RECONCILE time.Duration = 5
+	CHUNKSIZE int           = 5
+	EU        Location      = "eu"
+	GLOBAL    Location      = "com"
 )
 
 // Bwv coordinates the interaction between the Bitwarden API and the local
@@ -118,6 +121,8 @@ func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 					if name, err := b.Secrets.DecryptStr(item.Name); err == nil && (name == entry || entry == "*") {
 						decryptedchan <- NewDecryptedCipher(b).Decrypt(item, name)
 					}
+				} else if item.ID.String() == entry {
+					decryptedchan <- NewDecryptedCipher(b).Decrypt(item, entry)
 				}
 
 			}
@@ -174,6 +179,9 @@ func (b *Bwv) Sync() (err error) {
 	ctx = context.WithValue(ctx, transport.AuthToken{}, b.lr.AccessToken)
 
 	if err = transport.DefaultHttpClient.Get(ctx, b.Endpoint.ApiServer+"/sync", &data.Sync); err != nil {
+		if errors.Is(err, transport.ErrUnauthorized{}) {
+			return
+		}
 		err = fmt.Errorf("could not sync: %w", err)
 		return
 	}
@@ -198,9 +206,9 @@ func (b *Bwv) salt() string {
 func (b *Bwv) Setup() *Bwv {
 	var (
 		err        error
-		secrets    map[string]string = config.GetSecrets(true)
+		secrets    map[string][]byte = config.GetSecrets(true)
 		hashed     string
-		useApiKeys bool = secrets["BW_CLIENTID"] != "" && secrets["BW_CLIENTSECRET"] != ""
+		useApiKeys bool = secrets["BW_CLIENTID"] != nil && secrets["BW_CLIENTSECRET"] != nil
 	)
 
 	if useApiKeys {
@@ -213,17 +221,19 @@ func (b *Bwv) Setup() *Bwv {
 			log.Fatal(err)
 		}
 
-		if b.lr, err = b.UserLogin(hashed, secrets["BW_EMAIL"]); err != nil {
+		if b.lr, err = b.UserLogin(hashed, string(secrets["BW_EMAIL"])); err != nil {
 			log.Fatal(err)
 		}
 	}
 
 	var (
-		active chan bool = make(chan bool)
-		done   chan bool = make(chan bool)
+		auth           chan bool = make(chan bool)
+		done           chan bool = make(chan bool)
+		pauseReconcile chan bool = make(chan bool)
 	)
-	go b.refresh(active, done, true)
-	active <- true
+	go b.reconcile(pauseReconcile, auth, false)
+	go b.refresh(auth, done, pauseReconcile, true)
+	auth <- true
 
 	// Wait for the first sync to complete before continuing
 	// This allows the secret cache to be populated before
@@ -236,12 +246,20 @@ func (b *Bwv) Setup() *Bwv {
 		// their master password, we encrypt the hashed password with a key
 		// derived from the master password salted with a string that is unique
 		// to the user and the application.
-		var salt = b.salt()
-		var key, mac []byte
-		key, mac, err = crypto.DeriveStretchedMasterKey(cache.MasterPassword(), salt, b.lr.KDFInfo)
+		var (
+			salt     = b.salt()
+			key, mac []byte
+			mpw      []byte
+		)
+		if mpw, err = cache.MasterPassword(); err != nil {
+			log.Fatal(err)
+		}
+
+		key, mac, err = crypto.DeriveStretchedMasterKey(mpw, salt, b.lr.KDFInfo)
 		if err != nil {
 			log.Fatal(err)
 		}
+		memguard.ScrambleBytes(mpw)
 
 		b.Secrets.Data.Session, err = crypto.EncryptWith([]byte(hashed), types.AesCbc256_HmacSha256_B64, key, mac)
 		if err != nil {
@@ -252,6 +270,37 @@ func (b *Bwv) Setup() *Bwv {
 	return b
 }
 
+func (b *Bwv) reconcile(pause, auth chan bool, paused bool) {
+	for {
+		select {
+		case <-pause:
+			// The reconciliation loop needs to be blocked during
+			// the re-authentication process to avoid it conflicting,
+			// competing for the cache or multiple requests being
+			// sent to the server for the same thing
+			paused = !paused
+			log.Println("Reconciliation", paused)
+		case <-time.After(RECONCILE * time.Minute):
+			if paused {
+				continue
+			}
+
+			log.Println("Syncing...")
+			if err := b.Sync(); err != nil {
+				log.Println(err)
+				// In rare occurrences, the bitwarden servers may be
+				// unavailable during the re-auth process. If this
+				// happens, the re-auth process should sleep for the
+				// next hour and try again whilst this process runs
+				// more frequently
+				if errors.Is(err, transport.ErrUnauthorized{}) {
+					auth <- true
+				}
+			}
+		}
+	}
+}
+
 // refresh the token when it expires
 //
 // This is run as a go routine and shouldn't be called directly by any other
@@ -260,19 +309,25 @@ func (b *Bwv) Setup() *Bwv {
 // The active channel is used to signal that the token should be refreshed
 // immediately and when triggered, will re-authenticate to the Bitwarden server
 // to update the Access token and sync the local cache.
-func (b *Bwv) refresh(active, done chan bool, firstRun bool) {
+func (b *Bwv) refresh(auth, done, pauseReconcile chan bool, firstRun bool) {
 	for {
 		select {
 		// Refresh the token 5 seconds before it expires to give the client
 		// enough time to complete the sync.
 		case <-time.After(time.Duration(b.lr.ExpiresIn-5) * time.Second):
-			go func() { active <- true }()
-		case <-active:
+			go func() { auth <- true }()
+		case <-auth:
+			pauseReconcile <- true
 			if b.Secrets.Data != nil {
-				var apiLogin bool = b.Secrets.Data.Session.IsZero()
+				var (
+					apiLogin bool = b.Secrets.Data.Session.IsZero()
+					lr       *types.LoginResponse
+					err      error
+				)
+
 				if apiLogin {
 					log.Println("Refreshing API token...")
-					if b.lr, _ = b.ApiLogin(config.GetSecrets(true)); b.lr == nil {
+					if lr, err = b.ApiLogin(config.GetSecrets(true)); err != nil {
 						log.Println("Could not refresh API token")
 						continue
 					}
@@ -284,20 +339,28 @@ func (b *Bwv) refresh(active, done chan bool, firstRun bool) {
 						hashed []byte
 						err    error
 						kdf    = b.lr.KDFInfo
+						mpw    []byte
 					)
-					k, m, _ = crypto.DeriveStretchedMasterKey(cache.MasterPassword(), salt, kdf)
+					if mpw, err = cache.MasterPassword(); err != nil {
+						log.Fatal(err)
+					}
+
+					k, m, _ = crypto.DeriveStretchedMasterKey(mpw, salt, kdf)
 					if hashed, err = crypto.DecryptWith(b.Secrets.Data.Session, k, m); err != nil {
 						log.Println("Could not decrypt session token", err)
 						continue
 					}
+					memguard.ScrambleBytes(mpw)
 
 					var email string = b.Secrets.Data.Sync.Profile.Email
-					if b.lr, err = b.UserLogin(string(hashed), email); err != nil {
+					if lr, err = b.UserLogin(string(hashed), email); err != nil {
 						log.Println("Could not refresh user token", err)
 						continue
 					}
 				}
+				b.lr = lr
 			}
+
 			log.Println("Syncing...")
 			if err := b.Sync(); err != nil {
 				log.Println(err)
@@ -309,6 +372,7 @@ func (b *Bwv) refresh(active, done chan bool, firstRun bool) {
 				firstRun = false
 				done <- true
 			}
+			pauseReconcile <- true
 
 			// Call the autoloader if it has been set
 			if b.autoload != nil {

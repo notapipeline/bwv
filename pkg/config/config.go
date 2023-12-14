@@ -16,6 +16,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -33,7 +34,7 @@ import (
 // be mocked in tests
 var (
 	ConfigPath func(m ConfigMode) string      = getConfigPath
-	GetSecrets func(v bool) map[string]string = tools.GetSecretsFromUserEnvOrStore
+	GetSecrets func(v bool) map[string][]byte = tools.GetSecretsFromUserEnvOrStore
 )
 
 type Config struct {
@@ -198,16 +199,16 @@ func getConfigPath(m ConfigMode) string {
 	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
 }
 
-func (c *Config) CheckApiKey(addr, key string) bool {
+func (c *Config) CheckApiKey(addr string, key []byte) bool {
 	secrets := GetSecrets(false)
 	if addr == "127.0.0.1" || tools.ContainsIp("127.0.0.1/24", addr) {
-		if key == secrets["BW_CLIENTSECRET"] || key == secrets["BW_PASSWORD"] {
+		if bytes.Equal(key, secrets["BW_CLIENTSECRET"]) || bytes.Equal(key, secrets["BW_PASSWORD"]) {
 			return true
 		}
 		return false
 	}
 
-	if key == secrets["BW_CLIENTSECRET"] || key == secrets["BW_PASSWORD"] {
+	if bytes.Equal(key, secrets["BW_CLIENTSECRET"]) || bytes.Equal(key, secrets["BW_PASSWORD"]) {
 		// If either of these come from anywhere other than localhost, we want
 		// to kill the server and prevent unlock from taking place as this may
 		// indicate a compromise of either the client secret or the master
@@ -228,7 +229,7 @@ func (c *Config) CheckApiKey(addr, key string) bool {
 	}
 
 	for ip, k := range c.Server.ApiKeys {
-		if k == key && (ip == addr || tools.ContainsIp(ip, addr)) {
+		if bytes.Equal([]byte(k), key) && (ip == addr || tools.ContainsIp(ip, addr)) {
 			return true
 		}
 	}

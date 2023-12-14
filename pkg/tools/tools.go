@@ -79,12 +79,12 @@ func getSecret(what string) string {
 // 1. Environment
 // 2. Secrets store
 // 3. User input
-func GetSecretsFromUserEnvOrStore(userInteractive bool) map[string]string {
-	secrets := map[string]string{
-		"BW_CLIENTID":     "",
-		"BW_CLIENTSECRET": "",
-		"BW_PASSWORD":     "",
-		"BW_EMAIL":        "",
+func GetSecretsFromUserEnvOrStore(userInteractive bool) map[string][]byte {
+	secrets := map[string][]byte{
+		"BW_CLIENTID":     nil,
+		"BW_CLIENTSECRET": nil,
+		"BW_PASSWORD":     nil,
+		"BW_EMAIL":        nil,
 	}
 
 	for k := range secrets {
@@ -101,7 +101,7 @@ func GetSecretsFromUserEnvOrStore(userInteractive bool) map[string]string {
 				value, _ = ReadLine(k + ": ")
 			}
 		}
-		secrets[k] = value
+		secrets[k] = []byte(value)
 	}
 	return secrets
 }

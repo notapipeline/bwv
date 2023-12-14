@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230923063757-afb1ddc0824c
+	github.com/awnumar/memguard v0.22.4
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/coreos/go-systemd/v22 v22.5.0
@@ -20,6 +21,7 @@ require (
 )
 
 require (
+	github.com/awnumar/memcall v0.2.0 // indirect
 	github.com/cloudflare/circl v1.3.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.16.0 // indirect

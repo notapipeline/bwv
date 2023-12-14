@@ -39,7 +39,7 @@ var revokeCmd = &cobra.Command{
 You must specify either an address or a cidr block. You cannot specify both.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
-			password string
+			password []byte
 			err      error
 			token    string
 			kdf      types.KDFInfo

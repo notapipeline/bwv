@@ -32,19 +32,23 @@ func TestPrelogin(t *testing.T) {
 	transport.DefaultHttpClient = MockPreloginSuccessHttpClient{}
 
 	// Mock the cache.Instance function
-	cache.Instance = func(password, email string, pbkdf types.KDFInfo) (*cache.SecretCache, error) {
+	cache.Instance = func(password, email []byte, pbkdf types.KDFInfo) (*cache.SecretCache, error) {
 		return &cache.SecretCache{
 			KDF: pbkdf,
 		}, nil
 	}
+	cache.MasterPassword = func() ([]byte, error) {
+		return []byte("password"), nil
+	}
 
 	// Set up the preLoginRequest and expected response
 	// Set up the expected hashed password
-	expectedHashedPassword := "0GA3u/K3oddElx6cM1ztGEz4RI97+wBWflDkI4CRfsE="
+	//expectedHashedPassword := "0GA3u/K3oddElx6cM1ztGEz4RI97+wBWflDkI4CRfsE="
+	expectedHashedPassword := "soB7e/t+R1y//YFB6YabOea5QnZWeace0r3XXP5luE0="
 
 	// Call the Prelogin function
 	var b *Bwv = NewBwv()
-	hashedPassword, err := b.prelogin("password", "test@example.com")
+	hashedPassword, err := b.prelogin([]byte("password"), []byte("test@example.com"))
 
 	// Verify the result
 	if err != nil {
@@ -62,13 +66,13 @@ func TestPreloginFailsOnCreateSecretCache(t *testing.T) {
 	transport.DefaultHttpClient = MockPreloginSuccessHttpClient{}
 
 	// Mock the cache.Instance function
-	cache.Instance = func(password, email string, pbkdf types.KDFInfo) (*cache.SecretCache, error) {
+	cache.Instance = func(password, email []byte, pbkdf types.KDFInfo) (*cache.SecretCache, error) {
 		return nil, fmt.Errorf("Could not create secret cache")
 	}
 
 	var b *Bwv = NewBwv()
 	// Call the Prelogin function
-	_, err := b.prelogin("password", "test@example.com")
+	_, err := b.prelogin([]byte("password"), []byte("test@example.com"))
 
 	// Verify the result
 	if err == nil {
@@ -82,7 +86,7 @@ func TestPreFailsOnPostlogin(t *testing.T) {
 	transport.DefaultHttpClient = MockPreloginPostFailureHttpClient{}
 
 	// Mock the cache.Instance function
-	cache.Instance = func(password, email string, pbkdf types.KDFInfo) (*cache.SecretCache, error) {
+	cache.Instance = func(password, email []byte, pbkdf types.KDFInfo) (*cache.SecretCache, error) {
 		return &cache.SecretCache{
 			KDF: pbkdf,
 		}, nil
@@ -90,7 +94,7 @@ func TestPreFailsOnPostlogin(t *testing.T) {
 
 	var b *Bwv = NewBwv()
 	// Call the Prelogin function
-	_, err := b.prelogin("password", "test@example.com")
+	_, err := b.prelogin([]byte("password"), []byte("test@example.com"))
 
 	// Verify the result
 	if err == nil {

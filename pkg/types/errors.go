@@ -59,3 +59,11 @@ type InvalidMACError struct {
 func (e InvalidMACError) Error() string {
 	return fmt.Sprintf("invalid MAC: expected %q, got %q", e.Expected, e.Actual)
 }
+
+type SyncFailedError struct {
+	Err error
+}
+
+func (e SyncFailedError) Error() string {
+	return fmt.Sprintf("sync failed: %s", e.Err.Error())
+}

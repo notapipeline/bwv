@@ -2,23 +2,51 @@
 
 `bwv` is a small helper application for serving Bitwarden secrets over HTTP(S).
 
-I created this application to primarily serve Hashicorp Vault unseal keys from my desktop over HTTP(S) to feed inside a local 3-node
-kubernetes cluster. See the example at the end of this document for how this may be implemented to auto-unseal Hashicorp Vault.
-
 > Note.
-> Much of the bitwarden API and cryptography functionality is drawn from the `bitw` application (https://github.com/mvdan/bitw)
-> however there is no association between the two applications and any issues found with this repo should be reported here.
+> Much of the bitwarden API and cryptography functionality is drawn from the
+> `bitw` application (https://github.com/mvdan/bitw) however there is no
+> association between the two applications and any issues found with this repo
+> should be reported here.
+>
+> Due to the integrations with KWallet, Libsecret and SystemD, this application
+> only works on the Linux platform today.
+>
+> If someone knows how to integrate similar functionality on other platforms,
+> I would welcome pull requests.
 
-> Due to the integrations with KWallet, Libsecret and SystemD, this application only works on the Linux platform today.
-> If someone knows how to integrate similar functionality on other platforms, I would welcome pull requests.
+---
+**Disclaimer**
 
+I am not a cryptographer, nor do I make any such claim to being one; neither am
+I affiliated with Bitwarden in any way.
+
+This code is a personal project to wrap the Bitwarden API and present secrets
+for use inside my environment but I am not responsible for the cryptographic
+functions used to encrypt secrets other than the wrappers you find in this
+library and application. If you have questions or concerns regarding how
+secrets are encrypted, please discuss these with with Bitwarden directly.
+
+Whilst every effort is taken to ensure this application handles secrets in a
+secure manner during its normal operation, including locking memory and ensuring
+decrypted secrets are kept in memory for the minimal amount of time, certain
+functionality provided as part of this application offers the opportinity for
+secrets to be leaked and should thus be used with caution.
+
+This is no different than any other API or wallet service and the authentication
+for the API can (and should) be tied to a wallet service ensuring access to the
+server is not available for users outside of your own current session.
+---
 
 ## Configuration
-To configure `bwv` to access your Bitwarden account details, you may do this in a number of ways:
+To configure `bwv` to access your Bitwarden account details, you may do this in
+a number of ways:
 
-Environment, kwallet and libsecrets all require the following attributes to be set exactly as seen.
+- Environment
+- kwallet
+- libsecrets
 
-In all instances, `BW_CLIENTID` and `BW_CLIENTSECRET` are optional but recommended to prevent continuous prompting for 2fa
+In all instances, `BW_CLIENTID` and `BW_CLIENTSECRET` are optional but
+recommended to prevent continuous prompting for 2fa
 
 ```
 BW_CLIENTID
@@ -30,20 +58,25 @@ BW_EMAIL
 ### Environment variables (not recommended)
 Create the environment variables containing your details.
 
-I generally avoid recommending this method as it involves credentials to be stored unencrypted inside the environment
-where they can be easily accessed. It would also require them to be written in plaintext to disk for service automation.
+I generally avoid recommending this method as it involves credentials to be
+stored unencrypted inside the environment where they can be easily accessed.
+It would also require them to be written in plaintext to disk for service
+automation.
 
 ## kwallet
 Store the above secrets in kwallet at `/Passwords/bwvault`
 
 ## libsecrets
-Use the libsecrets manager of your choice and store the above secrets as attributes at the same `/Passwords/bwvault`.
+Use the libsecrets manager of your choice and store the above secrets as
+attributes at the same `/Passwords/bwvault`.
 
-The advantages of using kwallet or libsecret is that credentials are stored encrypted on disk and are generally unlocked
-when you unlock your computer. This reduces the chances of credential leakage.
+The advantages of using kwallet or libsecret is that credentials are stored
+encrypted on disk and are generally unlocked when you unlock your computer. This
+reduces the chances of credential leakage.
 
-By restricting this application to userspace, and tying the local client to `BW_CLIENTSECRET` drawn from any of the
-above 3 credential handling methods, your bitwarden secrets can remain secret even if you are running the tool on a
+By restricting this application to userspace, and tying the local client to
+`BW_CLIENTSECRET` drawn from any of the above 3 credential handling methods,
+your bitwarden secrets can remain secret even if you are running the tool on a
 shared computer.
 
 ## Building
@@ -56,16 +89,20 @@ Clone this repo then run `go build .`
 > If you need to access credentials over the network, see the API documention below.
 
 - `serve` Run bwv server in foreground.
-- `install` Install the userspace systemd service
-- `start` Start the userspace systemd service
-- `stop` stop the userspace systemd service
-- `status` Get the status of the service (usually one of "running" or "dead")
-- `remove` Stop the userspace systemd service and remove it entirely.
-- `genkey <ip address|cidr range>` Create a 32 character random string to use as an API key, bound to the provided address or cidr range
-- `revoke <key>` Revokes the given key. Future iterations will allow for an ip or range to be provided if the key is lost.
+- `service`
+  - `install` Install the userspace systemd service
+  - `start` Start the userspace systemd service
+  - `stop` stop the userspace systemd service
+  - `status` Get the status of the service (usually one of "running" or "dead")
+  - `remove` Stop the userspace systemd service and remove it entirely.
+- `key`
+  - `genkey <ip address|cidr range>` Create a 32 character random string to use
+     as an API key, bound to the provided address or cidr range
+  - `revoke <key>` Revokes the given key. Future iterations will allow for an ip or range to be provided if the key is lost.
 - `whitelist <IP or range>` Add the given IP or range to the access whitelist
-- `drop <IP or range>` Delete the given IP or range from the access whitelist
-- `path/to/secret[?[field|property]=value` Get the secret at a given path, optionally followed by specific properties to read
+  - `drop <IP or range>` Delete the given IP or range from the access whitelist
+- `path/to/secret[?[field|property]=value` Get the secret at a given path,
+  optionally followed by specific properties to read
 
 ## Usage
 
@@ -203,7 +240,7 @@ $ curl -s -H "Authorization: Bearer TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO" "https://e
 ```
 
 Failure to provide a token, using anything other than `Bearer`, or using a token not assigned to the address or range
-you are accessing the API from, will result in a `403 Permission Denied` response code. 
+you are accessing the API from, will result in a `403 Permission Denied` response code.
 
 ## A real-world example with Hashicorp Vault
 

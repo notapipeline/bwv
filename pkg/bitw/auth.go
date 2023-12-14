@@ -29,9 +29,10 @@ import (
 )
 
 type preLoginRequest struct {
-	Email string `json:"email"`
+	Email []byte `json:"email"`
 }
 
+// urlValues takes pairs of strings and returns a url.Values object
 func urlValues(pairs ...string) url.Values {
 	if len(pairs)%2 != 0 {
 		panic("pairs must be of even length")
@@ -45,7 +46,7 @@ func urlValues(pairs ...string) url.Values {
 
 // ApiLogin retrieves an API token from the Bitwarden API by sending the
 // users client_id and client_secret.
-func (b *Bwv) ApiLogin(s map[string]string) (*types.LoginResponse, error) {
+func (b *Bwv) ApiLogin(s map[string][]byte) (*types.LoginResponse, error) {
 	log.Println("executing api login")
 	var (
 		err   error
@@ -53,17 +54,17 @@ func (b *Bwv) ApiLogin(s map[string]string) (*types.LoginResponse, error) {
 		login url.Values = urlValues(
 			"grant_type", "client_credentials",
 			"scope", "api",
-			"client_id", s["BW_CLIENTID"],
-			"client_secret", s["BW_CLIENTSECRET"],
+			"client_id", string(s["BW_CLIENTID"]),
+			"client_secret", string(s["BW_CLIENTSECRET"]),
 			"deviceType", "3",
 			"deviceIdentifier", "aac2e34a-44db-42ab-a733-5322dd582c3d",
 			"deviceName", "firefox",
 		)
 	)
 
-	// URL values cannot be retried and on failure, is likely to kill the process
+	// URL values cannot be retried and on failure are likely to kill the process
 	//
-	// as most instances, a delayed retry will succeed, we can wrap this here
+	// As in most instances a delayed retry will succeed, we can wrap this here
 	// to try keep the process alive by adding a longer delay.
 	for i := 0; i < 5; i++ {
 		ctx := context.Background()
@@ -71,7 +72,7 @@ func (b *Bwv) ApiLogin(s map[string]string) (*types.LoginResponse, error) {
 		if err == nil {
 			break
 		}
-		<-time.After(time.Duration(1) * time.Second)
+		<-time.After(time.Duration(5) * time.Second)
 	}
 
 	if err != nil {
@@ -146,9 +147,14 @@ func (b *Bwv) UserLogin(hashedPassword, email string) (*types.LoginResponse, err
 // This information is public in that it can always be retrieved by POSTing the
 // users email address to the prelogin endpoint however this is a heavily rate
 // limited endpoint and is likely to be blocked if used too frequently.
-func (b *Bwv) prelogin(password, email string) (hashed string, err error) {
+func (b *Bwv) prelogin(password, email []byte) (hashed string, err error) {
 	log.Println("executing pre-login stage")
 	var preLogin types.KDFInfo
+
+	// It is not recommended to add any retry against this endpoint
+	// as it is heavily rate limited and will likely block the client
+	// from starting if used too frequently. For this reason, this cannot
+	// be wrapped in a retry function and will 400 Bad Request on failure.
 	if err = transport.DefaultHttpClient.Post(context.Background(), b.Endpoint.ApiServer+"/accounts/prelogin", &preLogin, preLoginRequest{
 		Email: email,
 	}); err != nil {

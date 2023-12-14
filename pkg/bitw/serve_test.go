@@ -16,6 +16,7 @@
 package bitw
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -225,7 +226,7 @@ func TestStoreToken(t *testing.T) {
 
 			if test.mocks != nil {
 				test.mocks()
-				if _, err = crypto.ClientEncrypt("masterpw", "email@example.com", "invalidtoken", pbkdf); err != nil {
+				if _, err = crypto.Encrypt([]byte("masterpw"), "email@example.com", "invalidtoken", pbkdf); err != nil {
 					t.Fatal(err)
 					return
 				}
@@ -239,9 +240,19 @@ func TestStoreToken(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			server.Bwv.Secrets, err = cache.Instance("masterpw", "email@example.com", pbkdf)
+			mpw := []byte("masterpw")
+			email := []byte("email@example.com")
+			server.Bwv.Secrets, err = cache.Instance(mpw, email, pbkdf)
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			if bytes.Equal(mpw, []byte("masterpw")) {
+				t.Errorf("Expected master password to be %q but got %q", "masterpw", string(mpw))
+			}
+
+			if bytes.Equal(email, []byte("email@example.com")) {
+				t.Errorf("Expected email to be %q but got %q", "email@example.com", string(email))
 			}
 
 			if err := cs.UnmarshalText([]byte(encryptedMasterPassword)); err != nil {
@@ -311,10 +322,6 @@ func TestGetPath(t *testing.T) {
 				},
 				{
 					Code: http.StatusOK,
-					Body: testData.SyncResponse,
-				},
-				{
-					Code: http.StatusOK,
 					Body: testData.AttachmentLookupResponse,
 				},
 				{
@@ -324,12 +331,12 @@ func TestGetPath(t *testing.T) {
 			},
 		}
 
-		config.GetSecrets = func(v bool) map[string]string {
-			return map[string]string{
-				"BW_CLIENTID":     "mockid",
-				"BW_CLIENTSECRET": "mocktoken",
-				"BW_PASSWORD":     "masterpw",
-				"BW_EMAIL":        "email@example.com",
+		config.GetSecrets = func(v bool) map[string][]byte {
+			return map[string][]byte{
+				"BW_CLIENTID":     []byte("mockid"),
+				"BW_CLIENTSECRET": []byte("mocktoken"),
+				"BW_PASSWORD":     []byte("masterpw"),
+				"BW_EMAIL":        []byte("email@example.com"),
 			}
 		}
 	}
@@ -382,10 +389,10 @@ func TestGetPath(t *testing.T) {
 						},
 					},
 				}
-				config.GetSecrets = func(v bool) map[string]string {
-					return map[string]string{
-						"BW_PASSWORD": "masterpw",
-						"BW_EMAIL":    "email@example.com",
+				config.GetSecrets = func(v bool) map[string][]byte {
+					return map[string][]byte{
+						"BW_PASSWORD": []byte("masterpw"),
+						"BW_EMAIL":    []byte("email@example.com"),
 					}
 				}
 			},

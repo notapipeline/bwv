@@ -19,8 +19,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"sync"
-	"syscall"
+
+	"github.com/awnumar/memguard"
 
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/types"
@@ -32,28 +34,21 @@ import (
 //
 // Initialization of this object is done in a singleton fashion to ensure data
 // is not duplicated in memory. The master password is salted with the email
-// address, passed through the number of iterations defined and stored in locked
-// memory. The master password is then discarded.
+// address, passed through the number of iterations defined and stored in a
+// memory guarded enclave. The master password is then cryptographically discarded.
 type SecretCache struct {
 	Data *types.DataFile
 
-	key    []byte
-	macKey []byte
-	KDF    types.KDFInfo
+	keyEnclave *memguard.Enclave
+	macKey     []byte
+	KDF        types.KDFInfo
 
-	masterpw []byte
+	mpEnclave *memguard.Enclave
 }
 
 var (
 	secretCache *SecretCache
-	lock                             = &sync.Mutex{}
-	mlock       func(b []byte) error = func(b []byte) error {
-		return syscall.Mlock(b)
-	}
-
-	mcpy func(dst, src []byte) int = func(dst, src []byte) int {
-		return copy(dst, src)
-	}
+	lock        = &sync.Mutex{}
 )
 
 // Instance gets the current instance or creates a new secret cache object.
@@ -62,10 +57,14 @@ var (
 // address, passed through the number of iterations defined and stored in locked
 // memory. The master password is then discarded.
 var Instance = instance
+var MasterPassword = masterPassword
 
-func instance(masterpw, email string, kdf types.KDFInfo) (*SecretCache, error) {
+func instance(masterpw, email []byte, kdf types.KDFInfo) (*SecretCache, error) {
 	lock.Lock()
 	defer lock.Unlock()
+	defer memguard.WipeBytes(masterpw)
+	defer memguard.WipeBytes(email)
+
 	if secretCache != nil {
 		return secretCache, nil
 	}
@@ -77,6 +76,7 @@ func instance(masterpw, email string, kdf types.KDFInfo) (*SecretCache, error) {
 	if err != nil {
 		err = fmt.Errorf("failed to set master password: %v", err)
 	}
+
 	return secretCache, err
 }
 
@@ -84,14 +84,35 @@ func instance(masterpw, email string, kdf types.KDFInfo) (*SecretCache, error) {
 func Reset() {
 	lock.Lock()
 	defer lock.Unlock()
+	memguard.Purge()
 	secretCache = nil
 }
 
-func MasterPassword() []byte {
+func masterPassword() (b []byte, err error) {
 	if secretCache == nil {
-		return nil
+		return nil, fmt.Errorf("secret cache is not initialized")
 	}
-	return secretCache.masterpw
+	var buf *memguard.LockedBuffer
+	if buf, err = secretCache.mpEnclave.Open(); err != nil {
+		log.Fatalf("failed to open enclave %q", err)
+	}
+	defer buf.Destroy()
+
+	// We need to copy the buffer out otherwise it will be destroyed when the
+	// function returns
+	b = append(b, buf.Bytes()...)
+	return
+}
+
+func (c *SecretCache) key() (b []byte, err error) {
+	var buf *memguard.LockedBuffer
+	if buf, err = c.keyEnclave.Open(); err != nil {
+		err = fmt.Errorf("failed to open key enclave: %w", err)
+	}
+	defer buf.Destroy()
+
+	b = append(b, buf.Bytes()...)
+	return
 }
 
 // MasterPassword returns the master password used to unlock the secret cache.
@@ -99,15 +120,12 @@ func MasterPasswordKeyMac() ([]byte, []byte, error) {
 	if secretCache == nil {
 		return nil, nil, nil
 	}
-	return crypto.StretchKey(secretCache.masterpw)
-}
-
-// UserKey returns the user key and mac key used to encrypt and decrypt data.
-func UserKey() ([]byte, []byte) {
-	if secretCache == nil {
-		return nil, nil
+	mpw, err := MasterPassword()
+	defer memguard.ScrambleBytes(mpw)
+	if err != nil {
+		return nil, nil, err
 	}
-	return secretCache.key, secretCache.macKey
+	return crypto.StretchKey(mpw)
 }
 
 // Unlock the secret cache with the given key cipher.
@@ -118,40 +136,71 @@ func UserKey() ([]byte, []byte) {
 // This key can be found in both the Profile field of the data file as well as
 // the LoginResponse.
 func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
+	// only unlock if there is nothing in the enclave (first time)
+	if c.keyEnclave != nil {
+		return
+	}
+
 	var (
 		key, macKey, finalKey []byte
+		mpw                   []byte
+		scramble              bool
 	)
+
+	if mpw, err = MasterPassword(); err != nil {
+		return
+	}
 
 	switch keyCipher.Type {
 	case types.AesCbc256_B64:
-		if finalKey, err = crypto.DecryptWith(keyCipher, c.masterpw, nil); err != nil {
-			return
+		if finalKey, err = crypto.DecryptWith(keyCipher, mpw, nil); err != nil {
+			scramble = true
 		}
 	case types.AesCbc256_HmacSha256_B64:
 		// We decrypt the decryption key from the synced data, using the key
 		// resulting from stretching masterKey. The keys are discarded once we
 		// obtain the final ones.
-		if key, macKey, err = crypto.StretchKey(c.masterpw); err != nil {
-			return
+		if key, macKey, err = crypto.StretchKey(mpw); err != nil {
+			scramble = true
+			break
 		}
 
 		if finalKey, err = crypto.DecryptWith(keyCipher, key, macKey); err != nil {
-			return
+			scramble = true
 		}
 	default:
 		err = fmt.Errorf("unsupported key cipher type %q", keyCipher.Type)
-		return
+		scramble = true
 	}
 
-	switch len(finalKey) {
-	case 32:
-		c.key = finalKey
-	case 64:
-		c.key, c.macKey = finalKey[:32], finalKey[32:64]
-	default:
-		err = fmt.Errorf("invalid key length: %d", len(finalKey))
+	var buf *memguard.LockedBuffer = memguard.NewBuffer(32)
+	if !scramble {
+		switch len(finalKey) {
+		case 32:
+			buf.Move(finalKey)
+		case 64:
+			c.macKey = append(c.macKey, finalKey[32:64]...)
+			var b []byte
+			b = append(b, finalKey[:32]...)
+			buf.Move(b)
+		default:
+			err = fmt.Errorf("invalid key length: %d", len(finalKey))
+		}
+
+		if err == nil {
+			enclave := buf.Seal()
+			if enclave == nil {
+				return fmt.Errorf("failed to create enclave for master password: %w", err)
+			}
+
+			c.keyEnclave = enclave
+		}
 	}
 
+	// This copy of the key is done with and to prevent it being recovered from
+	// memory it is scrambled to ensure it is not recoverable.
+	memguard.ScrambleBytes(finalKey)
+	memguard.ScrambleBytes(mpw)
 	return
 }
 
@@ -163,10 +212,22 @@ func (c *SecretCache) Update(data *types.DataFile) (err error) {
 }
 
 // HashPassword hashes the given password with the master password.
-func (c *SecretCache) HashPassword(password string) string {
+//
+// This will destroy the password in memory after hashing.
+func (c *SecretCache) HashPassword(password []byte) string {
+	defer memguard.ScrambleBytes(password)
+	var (
+		err error
+		mpw []byte
+	)
+	if mpw, err = MasterPassword(); err != nil {
+		log.Fatalf("failed to get master password: %q", err)
+	}
+
 	hashedpw := base64.StdEncoding.
 		Strict().
-		EncodeToString(pbkdf2.Key(c.masterpw, []byte(password), 1, 32, sha256.New))
+		EncodeToString(pbkdf2.Key(mpw, password, 1, 32, sha256.New))
+	defer memguard.ScrambleBytes(mpw)
 	return hashedpw
 }
 
@@ -190,7 +251,17 @@ func (c *SecretCache) Decrypt(s types.CipherString) ([]byte, error) {
 	if s.IsZero() {
 		return nil, nil
 	}
-	return crypto.DecryptWith(s, c.key, c.macKey)
+
+	var (
+		key []byte
+		err error
+	)
+
+	if key, err = c.key(); err != nil {
+		return nil, err
+	}
+	defer memguard.ScrambleBytes(key)
+	return crypto.DecryptWith(s, key, c.macKey)
 }
 
 // Encrypt takes a byte slice and encrypts it using the user key returning a
@@ -209,27 +280,37 @@ func (c *SecretCache) EncryptType(d []byte, t types.CipherStringType) (types.Cip
 	if len(d) == 0 {
 		return types.CipherString{}, nil
 	}
-	return crypto.EncryptWith(d, t, c.key, c.macKey)
+
+	var (
+		key []byte
+		err error
+	)
+
+	if key, err = c.key(); err != nil {
+		return types.CipherString{}, err
+	}
+	defer memguard.ScrambleBytes(key)
+
+	return crypto.EncryptWith(d, t, key, c.macKey)
 }
 
 // Set the master password into MLocked memory
-func (c *SecretCache) setMasterPassword(password, email string) error {
+func (c *SecretCache) setMasterPassword(password, email []byte) error {
 	var (
 		mpw []byte
 		err error
 	)
 
-	if mpw, err = crypto.DeriveMasterKey([]byte(password), email, c.KDF); err != nil {
+	if mpw, err = crypto.DeriveMasterKey([]byte(password), string(email), c.KDF); err != nil {
 		return fmt.Errorf("failed to derive master password: %w", err)
 	}
 
-	c.masterpw = make([]byte, len(mpw))
-	if err := mlock(c.masterpw); err != nil {
-		return fmt.Errorf("failed to lock memory for master password: %w", err)
+	buf := memguard.NewBuffer(len(mpw))
+	buf.Move(mpw)
+	enclave := buf.Seal()
+	if enclave == nil {
+		return fmt.Errorf("failed to create enclave for master password: %w", err)
 	}
-
-	if l := mcpy(c.masterpw, mpw); l < len(mpw) {
-		return fmt.Errorf("failed to set master password in locked memory. %d != %d", l, len(mpw))
-	}
+	c.mpEnclave = enclave
 	return nil
 }

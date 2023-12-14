@@ -32,6 +32,7 @@ import (
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
+// DecryptedCipher is a struct for holding decrypted cipher data.
 type DecryptedCipher struct {
 	Type           int               `json:"type"`
 	ID             uuid.UUID         `json:"id"`
@@ -50,6 +51,7 @@ type DecryptedCipher struct {
 	bwv *Bwv
 }
 
+// NewDecryptedCipher creates a new DecryptedCipher object.
 func NewDecryptedCipher(b *Bwv) *DecryptedCipher {
 	d := &DecryptedCipher{
 		bwv: b,
@@ -57,6 +59,7 @@ func NewDecryptedCipher(b *Bwv) *DecryptedCipher {
 	return d
 }
 
+// Get returns the value of the given field.
 func (d *DecryptedCipher) Get(what string) (value interface{}) {
 	switch strings.ToLower(what) {
 	case "type":
@@ -79,6 +82,7 @@ func (d *DecryptedCipher) Get(what string) (value interface{}) {
 	return nil
 }
 
+// GetAttachment returns the attachment with the given name.
 func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher {
 	d.Type = int(c.Type)
 	d.ID = c.ID
@@ -123,6 +127,10 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 				attachment *types.Attachment
 			)
 
+			// Although the attachment type is already stored in the cipher
+			// this is not necessarily the correct location for the attachment.
+			//
+			// the real attachment needs to be queriied seperately
 			if attachment, err = d.GetAttachmentLocation(c.ID.String(), a); err != nil {
 				log.Println(err)
 				return
@@ -146,6 +154,7 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 	return d
 }
 
+// GetAttachmentLocation queries the API to get the real location of the attachment.
 func (d *DecryptedCipher) GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, error) {
 	var (
 		apiurl     string = d.bwv.Endpoint.ApiServer + "/ciphers/" + c + "/attachment/" + a.ID
@@ -160,7 +169,7 @@ func (d *DecryptedCipher) GetAttachmentLocation(c string, a types.Attachment) (*
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+ d.bwv.Secrets.Data.LoginResponse.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+d.bwv.Secrets.Data.LoginResponse.AccessToken)
 	log.Println("sending request to", apiurl)
 	if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &attachment); err != nil {
 		log.Println("error sending request to", apiurl, err)
@@ -176,6 +185,7 @@ func (d *DecryptedCipher) GetAttachmentLocation(c string, a types.Attachment) (*
 	return &attachment, nil
 }
 
+// DecryptUrl takes an attachment and decrypts it using the user key.
 func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize int) ([]byte, error) {
 	var (
 		msg             types.SecretResponse

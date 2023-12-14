@@ -113,6 +113,10 @@ func (s CipherString) String() string {
 	)
 }
 
+func (s CipherString) Bytes() []byte {
+	return []byte(s.String())
+}
+
 // UnmarshalText - convert a byte slice to a CipherString
 func (s *CipherString) UnmarshalText(data []byte) error {
 	if len(data) == 0 {

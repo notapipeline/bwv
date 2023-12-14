@@ -22,6 +22,8 @@ import (
 	"r00t2.io/gokwallet"
 )
 
+var wm *gokwallet.WalletManager
+
 // Gets a secret value from kwallet
 func getSecretFromKWallet(what string) (string, error) {
 	if os.Getenv("USE_LIBSECRET") != "" {
@@ -31,12 +33,13 @@ func getSecretFromKWallet(what string) (string, error) {
 	var (
 		err error
 		r   *gokwallet.RecurseOpts = gokwallet.DefaultRecurseOpts
-		wm  *gokwallet.WalletManager
 	)
 
 	r.AllWalletItems = true
-	if wm, err = gokwallet.NewWalletManager(r, "BWVault"); err != nil {
-		return "", err
+	if wm == nil {
+		if wm, err = gokwallet.NewWalletManager(r, "BWVault"); err != nil {
+			return "", err
+		}
 	}
 
 	for _, v := range wm.Wallets {

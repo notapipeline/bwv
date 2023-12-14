@@ -16,8 +16,6 @@
 package cache
 
 import (
-	"fmt"
-	"syscall"
 	"testing"
 
 	"github.com/notapipeline/bwv/pkg/types"
@@ -30,22 +28,10 @@ var pbkdf types.KDFInfo = types.KDFInfo{
 	Parallelism: types.IntPtr(0),
 }
 
-/*var argon2 types.KDFInfo = types.KDFInfo{
-	Type:        :types.Argon2id,
-	Iterations:  :1,
-	Memory:      :65536,
-	Parallelism: :4,
-}*/
-
 func setupSuite(t *testing.T) func(t *testing.T) {
 	return func(t *testing.T) {
+		MasterPassword = masterPassword
 		Reset()
-		mlock = func(b []byte) error {
-			return syscall.Mlock(b)
-		}
-		mcpy = func(dst, src []byte) int {
-			return copy(dst, src)
-		}
 	}
 }
 
@@ -54,8 +40,8 @@ func TestInstanceReturnSameInstance(t *testing.T) {
 	defer teardownSuite(t)
 
 	// Call the Instance function
-	cache, _ := Instance("masterpw", "email", pbkdf)
-	secretCache, _ := Instance("masterpw", "email", pbkdf)
+	cache, _ := Instance([]byte("masterpw"), []byte("email"), pbkdf)
+	secretCache, _ := Instance([]byte("masterpw"), []byte("email"), pbkdf)
 
 	// Verify that the returned cache is the same as the initialized secretCache
 	if cache != secretCache {
@@ -68,63 +54,28 @@ func TestInstancePassword(t *testing.T) {
 	defer teardownSuite(t)
 
 	// Call the Instance function
-	cache, _ := Instance("masterpw", "email", pbkdf)
+	cache, _ := Instance([]byte("masterpw"), []byte("email"), pbkdf)
 
 	var (
 		expectedPasswd string = "w\x0eK\xc6\x0er\xd6eg\xce\xec\r\n\xebAN\xa1\x80\"\x96=hN\x15\x8d\x98\xfe\xac\v\xdcT\x1d"
-		receivedPasswd string = string(secretCache.masterpw)
+		mpw            []byte
+		err            error
+		receivedPasswd string
 		expected       string = "CCjdBXfDr1pZDn29R998UsQsLkqkadyk27CFlhUxDEk="
-		received       string = cache.HashPassword("masterpw")
+		received       string = cache.HashPassword([]byte("masterpw"))
 	)
+
+	if mpw, err = MasterPassword(); err != nil {
+		t.Errorf("Expected nil error but got %v when getting master password", err)
+	}
+	receivedPasswd = string(mpw)
+
 	if expectedPasswd != receivedPasswd {
 		t.Errorf("Expected %q but got %q", expectedPasswd, receivedPasswd)
 	}
 	// Verify that the returned cache is the same as the initialized secretCache
 	if received != expected {
 		t.Errorf("Expected %q but got %q", expected, received)
-	}
-}
-
-func TestInstancePasswordReturnsErrorIfNoMlock(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-
-	mlock = func(b []byte) error {
-		return fmt.Errorf("no mlock")
-	}
-	// Call the Instance function
-	_, err := Instance("masterpw", "email", pbkdf)
-
-	// Verify that the returned cache is the same as the initialized secretCache
-	var message string = "failed to set master password: " +
-		"failed to lock memory for master password: no mlock"
-	if err == nil {
-		t.Errorf("Expected nil but got %q", err)
-	}
-
-	if err.Error() != message {
-		t.Errorf("Expected %q but got %q", message, err.Error())
-	}
-}
-
-func TestInstancePasswordReturnsErrorIfMemCopyDoesntMatch(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	mcpy = func(dst, src []byte) int {
-		return 0
-	}
-	// Call the Instance function
-	_, err := Instance("masterpw", "email", pbkdf)
-
-	// Verify that the returned cache is the same as the initialized secretCache
-	var message string = "failed to set master password: " +
-		"failed to set master password in locked memory. 0 != 32"
-	if err == nil {
-		t.Errorf("Expected nil but got %q", err)
-	}
-
-	if err.Error() != message {
-		t.Errorf("Expected %q but got %q", message, err.Error())
 	}
 }
 
@@ -138,7 +89,7 @@ func TestEncryptDecryptAesCbc256HmacSha256B64(t *testing.T) {
 	defer teardownSuite(t)
 
 	// Call the Instance function
-	cache, _ := Instance("masterpw", "email@example.com", pbkdf)
+	cache, _ := Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf)
 
 	var (
 		expected                string = "test"
@@ -176,7 +127,7 @@ func TestEncryptDecryptAesCbc256B64(t *testing.T) {
 	defer teardownSuite(t)
 
 	// Call the Instance function
-	cache, _ := Instance("masterpw", "email@example.com", pbkdf)
+	cache, _ := Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf)
 
 	var (
 		encryptedMasterPassword = "0.NayR3jdlY9tNpp6YEMtP2Q==|" +
@@ -214,7 +165,7 @@ func TestRequestDecryptionAndEncryptionWithZeroBytes(t *testing.T) {
 	defer teardownSuite(t)
 
 	// Call the Instance function
-	cache, _ := Instance("masterpw", "email@example.com", pbkdf)
+	cache, _ := Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf)
 	var (
 		encrypted               types.CipherString
 		cs                      types.CipherString

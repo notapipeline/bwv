@@ -34,7 +34,7 @@ func TestGenkeyCmd(t *testing.T) {
 		addresses   []string
 		email       string
 		expectedErr error
-		getPassword func() (string, error)
+		getPassword func() ([]byte, error)
 		responses   []transport.MockHttpResponse
 	}{
 		{
@@ -44,8 +44,8 @@ func TestGenkeyCmd(t *testing.T) {
 			},
 			email:       "test@example.com",
 			expectedErr: nil,
-			getPassword: func() (string, error) {
-				return "password", nil
+			getPassword: func() ([]byte, error) {
+				return []byte("password"), nil
 			},
 			responses: []transport.MockHttpResponse{
 				{
@@ -62,8 +62,8 @@ func TestGenkeyCmd(t *testing.T) {
 			name:      "no email",
 			addresses: []string{"localhost"},
 			email:     "",
-			getPassword: func() (string, error) {
-				return "", nil
+			getPassword: func() ([]byte, error) {
+				return nil, nil
 			},
 			expectedErr: errors.New("invalid email address \"mail: no address\""),
 			responses: []transport.MockHttpResponse{
@@ -81,8 +81,8 @@ func TestGenkeyCmd(t *testing.T) {
 			name:      "rate limited",
 			addresses: []string{"localhost"},
 			email:     "test@example.com",
-			getPassword: func() (string, error) {
-				return "", nil
+			getPassword: func() ([]byte, error) {
+				return nil, nil
 			},
 			expectedErr: errors.New(`unable to get kdf info: "Bad Request: ` +
 				`{\"message\":\"Traffic from your network looks unusual. ` +
@@ -243,7 +243,7 @@ func TestGetPassword(t *testing.T) {
 			readPassword = test.mockReadPassword
 			actualResult, actualErr := getPassword()
 
-			if actualResult != test.expectedResult {
+			if string(actualResult) != test.expectedResult {
 				t.Errorf("Expected password %q, but got %q", test.expectedResult, actualResult)
 			}
 

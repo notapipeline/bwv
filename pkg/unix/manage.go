@@ -25,6 +25,7 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 )
 
+// StartService starts the bwv service
 func StartService(serviceName string) error {
 	var (
 		channel chan string = make(chan string)
@@ -41,6 +42,7 @@ func StartService(serviceName string) error {
 	return nil
 }
 
+// StopService stops the bwv service
 func StopService(serviceName string) error {
 	var (
 		channel chan string = make(chan string)
@@ -56,6 +58,7 @@ func StopService(serviceName string) error {
 	return nil
 }
 
+// ServiceStatus returns the status of the bwv service
 func ServiceStatus(serviceName string) (string, error) {
 	var (
 		err      error

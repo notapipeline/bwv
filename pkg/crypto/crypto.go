@@ -28,6 +28,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/awnumar/memguard"
 	"github.com/notapipeline/bwv/pkg/types"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
@@ -73,6 +74,8 @@ var (
 //   - PBKDF2: https://en.wikipedia.org/wiki/PBKDF2
 //   - Argon2id: https://en.wikipedia.org/wiki/Argon2
 func DeriveMasterKey(password []byte, email string, kdf types.KDFInfo) (b []byte, err error) {
+	defer memguard.ScrambleBytes(password)
+
 	switch kdf.Type {
 	case types.KDFTypePBKDF2:
 		b, err = pbkdfKey(password, []byte(strings.ToLower(email)), kdf.Iterations, 32, sha256.New), nil
@@ -81,7 +84,7 @@ func DeriveMasterKey(password []byte, email string, kdf types.KDFInfo) (b []byte
 		b, err = argon2ID(password, salt[:], uint32(kdf.Iterations),
 			uint32(*kdf.Memory*1024), uint8(*kdf.Parallelism), 32), nil
 	default:
-		return nil, fmt.Errorf("unsupported KDF type %d", kdf.Type)
+		return b, fmt.Errorf("unsupported KDF type %d", kdf.Type)
 	}
 	if b == nil {
 		err = fmt.Errorf("unable to derive master key")
@@ -111,14 +114,15 @@ func DeriveStretchedMasterKey(password []byte, email string, kdf types.KDFInfo) 
 //
 // It achieves this by first deriving the stretched master key and then using
 // that to encrypt the string using AES-CBC-256 with HMAC-SHA256
-func ClientEncrypt(password, salt, what string, kdf types.KDFInfo) (string, error) {
+func Encrypt(password []byte, salt, what string, kdf types.KDFInfo) (string, error) {
+	defer memguard.ScrambleBytes(password)
 	var (
 		key, mac []byte
 		err      error
 		t        types.CipherString
 	)
 
-	if key, mac, err = DeriveStretchedMasterKey([]byte(password), salt, kdf); err != nil {
+	if key, mac, err = DeriveStretchedMasterKey(password, salt, kdf); err != nil {
 		return "", fmt.Errorf("unable to stretch master password: %w", err)
 	}
 
@@ -140,6 +144,7 @@ func ClientEncrypt(password, salt, what string, kdf types.KDFInfo) (string, erro
 // On successful encryption, a CipherString is returned which can then be
 // safely marshalled to a string and transmitted in plain text.
 func EncryptWith(data []byte, csType types.CipherStringType, key, macKey []byte) (s types.CipherString, err error) {
+	defer memguard.ScrambleBytes(key)
 	switch csType {
 	case types.AesCbc256_B64, types.AesCbc256_HmacSha256_B64:
 	default:
@@ -165,6 +170,7 @@ func EncryptWith(data []byte, csType types.CipherStringType, key, macKey []byte)
 //   - MAC (32 bytes) (only if CipherStringType is AesCbc256_HmacSha256_B64)
 //   - CT (variable length)
 func EncryptAes(data []byte, csType types.CipherStringType, key, macKey []byte) ([]byte, error) {
+	defer memguard.ScrambleBytes(key)
 	switch csType {
 	case types.AesCbc256_B64, types.AesCbc256_HmacSha256_B64:
 	default:
@@ -191,6 +197,7 @@ func EncryptAes(data []byte, csType types.CipherStringType, key, macKey []byte) 
 }
 
 func encrypt(encType types.CipherStringType, data, key, keyMac []byte) (iv, mac, ct []byte, err error) {
+	defer memguard.ScrambleBytes(key)
 	if data, err = PadPKCS7(data, aes.BlockSize); err != nil {
 		return
 	}
@@ -199,6 +206,7 @@ func encrypt(encType types.CipherStringType, data, key, keyMac []byte) (iv, mac,
 	if block, err = newAesCipher(key); err != nil {
 		return
 	}
+
 	iv = make([]byte, aes.BlockSize)
 	if _, err = io.ReadFull(cryptorand.Reader, iv); err != nil {
 		return
@@ -213,15 +221,19 @@ func encrypt(encType types.CipherStringType, data, key, keyMac []byte) (iv, mac,
 			err = fmt.Errorf("encrypt: cipher string type expects a MAC")
 			return
 		}
+
 		var (
 			msg   []byte
 			mHash hash.Hash = hmac.New(sha256.New, keyMac)
 		)
+
 		msg = append(msg, iv...)
 		msg = append(msg, ct...)
+
 		if _, err = mHash.Write(msg); err != nil {
 			return
 		}
+
 		mac = mHash.Sum(nil)
 	}
 	return
@@ -234,7 +246,8 @@ func encrypt(encType types.CipherStringType, data, key, keyMac []byte) (iv, mac,
 // This function should only be used when the enciphered data is expected to be
 // an ascii string. If the data is expected to be binary, use DecryptWith or
 // DecryptAes
-func Decrypt(password, salt, data string, kdf types.KDFInfo) (string, error) {
+func Decrypt(password []byte, salt, data string, kdf types.KDFInfo) (string, error) {
+	defer memguard.ScrambleBytes(password)
 	var (
 		key, mac []byte
 		err      error
@@ -245,7 +258,7 @@ func Decrypt(password, salt, data string, kdf types.KDFInfo) (string, error) {
 		return "", fmt.Errorf("unable to unmarshal cipher string: %w", err)
 	}
 
-	if key, mac, err = DeriveStretchedMasterKey([]byte(password), salt, kdf); err != nil {
+	if key, mac, err = DeriveStretchedMasterKey(password, salt, kdf); err != nil {
 		return "", fmt.Errorf("unable to derive master password: %w", err)
 	}
 
@@ -263,6 +276,7 @@ func Decrypt(password, salt, data string, kdf types.KDFInfo) (string, error) {
 //
 // On successful decryption, the plaintext is returned as a byte slice
 func DecryptWith(s types.CipherString, key, keyMac []byte) ([]byte, error) {
+	defer memguard.ScrambleBytes(key)
 	switch s.Type {
 	case types.AesCbc256_B64, types.AesCbc256_HmacSha256_B64:
 	default:
@@ -277,6 +291,7 @@ func DecryptWith(s types.CipherString, key, keyMac []byte) ([]byte, error) {
 // This method should be used when the data is not provided as a CipherString
 // such as that used for attachments
 func DecryptAes(data []byte, key, keyMac []byte) ([]byte, error) {
+	defer memguard.ScrambleBytes(key)
 	var (
 		iv, mac, ct []byte
 		encType     types.CipherStringType = types.CipherStringType(data[0])
@@ -304,6 +319,7 @@ func DecryptAes(data []byte, key, keyMac []byte) ([]byte, error) {
 }
 
 func decrypt(encType types.CipherStringType, iv, mac, ct, key, keyMac []byte) ([]byte, error) {
+	defer memguard.ScrambleBytes(key)
 	var (
 		block cipher.Block
 		err   error
@@ -370,14 +386,17 @@ func ValidMAC(message, messageMAC, keyMac []byte) bool {
 
 // StretchKey stretches the given key using HKDF and returns the key and mac key
 func StretchKey(orig []byte) (key, macKey []byte, err error) {
-	key = make([]byte, 32)
-	macKey = make([]byte, 32)
+	key, macKey = make([]byte, 32), make([]byte, 32)
+
 	var r io.Reader
-	r = hkdfExpand(sha256.New, orig, []byte("enc"))
-	if _, err = r.Read(key); err != nil {
-		return nil, nil, err
+	{
+		r = hkdfExpand(sha256.New, orig, []byte("enc"))
+		if _, err = r.Read(key); err != nil {
+			return nil, nil, err
+		}
+
+		r = hkdfExpand(sha256.New, orig, []byte("mac"))
+		_, err = r.Read(macKey)
 	}
-	r = hkdfExpand(sha256.New, orig, []byte("mac"))
-	_, err = r.Read(macKey)
 	return key, macKey, err
 }

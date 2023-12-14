@@ -52,6 +52,10 @@ func init() {
 	}
 }
 
+// InstallService install the bwv service to user systemd
+//
+// This will create a systemd service file in ~/.config/systemd/user
+// and enable it to be started on login.
 func InstallService(serviceName string) error {
 	home, _ := os.UserHomeDir()
 	var (
@@ -91,6 +95,7 @@ func InstallService(serviceName string) error {
 	return nil
 }
 
+// RemoveService kills the current bwv service and removes the service file
 func RemoveService(serviceName string) error {
 	home, _ := os.UserHomeDir()
 	var (

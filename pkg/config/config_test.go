@@ -128,7 +128,7 @@ func TestConfig_IsSecure(t *testing.T) {
 func TestConfig_Save(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
+	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,7 +185,7 @@ token: ""
 func TestConfig_CheckApiKey_Localhost(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
+	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
 		t.Fatal(err)
 	}
 	// Create a new config
@@ -196,9 +196,9 @@ func TestConfig_CheckApiKey_Localhost(t *testing.T) {
 
 	// Check the API key for localhost
 	addr := "127.0.0.1"
-	key := "abcdef123456"
-	GetSecrets = func(v bool) map[string]string {
-		return map[string]string{
+	key := []byte("abcdef123456")
+	GetSecrets = func(v bool) map[string][]byte {
+		return map[string][]byte{
 			"BW_CLIENTSECRET": key,
 		}
 	}
@@ -211,7 +211,7 @@ func TestConfig_CheckApiKey_Localhost(t *testing.T) {
 func TestConfig_CheckApiKey_EnvironmentVariables(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
+	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
 		t.Fatal(err)
 	}
 	// Create a new config
@@ -226,7 +226,7 @@ func TestConfig_CheckApiKey_EnvironmentVariables(t *testing.T) {
 
 	// Check the API key for localhost
 	addr := "127.0.0.1"
-	key := "abcdef123456"
+	key := []byte("abcdef123456")
 
 	if !c.CheckApiKey(addr, key) {
 		t.Errorf("Expected API key %q for address %q to be valid", key, addr)
@@ -240,7 +240,7 @@ func TestConfig_CheckApiKey_EnvironmentVariables(t *testing.T) {
 func TestConfig_CheckApiKey_InvalidKey(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
-	if _, err := cache.Instance("masterpw", "email@example.com", pbkdf); err != nil {
+	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
 		t.Fatal(err)
 	}
 	// Create a new config
@@ -251,7 +251,7 @@ func TestConfig_CheckApiKey_InvalidKey(t *testing.T) {
 
 	// Check an invalid API key
 	addr := "127.0.0.1"
-	key := "invalidkey"
+	key := []byte("invalidkey")
 
 	if c.CheckApiKey(addr, key) {
 		t.Errorf("Expected API key %q for address %q to be invalid", key, addr)
