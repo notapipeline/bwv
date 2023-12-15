@@ -179,6 +179,7 @@ func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
 		case 32:
 			buf.Move(finalKey)
 		case 64:
+			c.macKey = []byte{}
 			c.macKey = append(c.macKey, finalKey[32:64]...)
 			var b []byte
 			b = append(b, finalKey[:32]...)
@@ -301,7 +302,7 @@ func (c *SecretCache) setMasterPassword(password, email []byte) error {
 		err error
 	)
 
-	if mpw, err = crypto.DeriveMasterKey([]byte(password), string(email), c.KDF); err != nil {
+	if mpw, err = crypto.DeriveMasterKey(password, string(email), c.KDF); err != nil {
 		return fmt.Errorf("failed to derive master password: %w", err)
 	}
 

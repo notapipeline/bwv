@@ -359,9 +359,10 @@ func TestEncryptWith(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			defer setupSuite(t)(t)
 			var (
-				key, mac, decrypted []byte
-				mpw                 []byte
-				err                 error
+				key, mac        []byte
+				dkey, decrypted []byte
+				mpw             []byte
+				err             error
 			)
 
 			setMocks(test.mocks)
@@ -373,6 +374,9 @@ func TestEncryptWith(t *testing.T) {
 			if key, mac, err = StretchKey(mpw); err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}
+
+			// key will be scrambled so copy it
+			dkey = append(dkey, key...)
 
 			if test.nilMac {
 				mac = nil
@@ -392,7 +396,7 @@ func TestEncryptWith(t *testing.T) {
 				t.Errorf("Expected nil error but got %v", err)
 			}
 
-			decrypted, err = DecryptWith(encrypted, key, mac)
+			decrypted, err = DecryptWith(encrypted, dkey, mac)
 			if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
 			}

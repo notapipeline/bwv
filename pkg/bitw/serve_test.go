@@ -27,7 +27,6 @@ import (
 
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/config"
-	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/notapipeline/bwv/testdata"
@@ -38,10 +37,12 @@ func setupSuite(t *testing.T) func(t *testing.T) {
 	tempDir := t.TempDir()
 	ocp := config.ConfigPath
 	osc := cache.Instance
+	ocm := cache.MasterPassword
 
 	config.ConfigPath = func(m config.ConfigMode) string {
 		return filepath.Join(tempDir, "server.yaml")
 	}
+
 	err := os.WriteFile(config.ConfigPath(config.ConfigModeServer), []byte(`
 server:
   whitelist:
@@ -62,6 +63,7 @@ server:
 
 	return func(t *testing.T) {
 		cache.Instance = osc
+		cache.MasterPassword = ocm
 		config.ConfigPath = ocp
 		cache.Reset()
 	}
@@ -226,10 +228,6 @@ func TestStoreToken(t *testing.T) {
 
 			if test.mocks != nil {
 				test.mocks()
-				if _, err = crypto.Encrypt([]byte("masterpw"), "email@example.com", "invalidtoken", pbkdf); err != nil {
-					t.Fatal(err)
-					return
-				}
 			}
 
 			var cnf *config.Config = config.New()
