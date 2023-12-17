@@ -27,10 +27,11 @@ library and application. If you have questions or concerns regarding how
 secrets are encrypted, please discuss these with with Bitwarden directly.
 
 Whilst every effort is taken to ensure this application handles secrets in a
-secure manner during its normal operation, including locking memory and ensuring
-decrypted secrets are kept in memory for the minimal amount of time, certain
-functionality provided as part of this application offers the opportinity for
-secrets to be leaked and should thus be used with caution.
+secure manner during its normal operation, including the use of guarded memory,
+cryptographic shredding of passwords and hashes and ensuring decrypted secrets
+are kept in memory for the minimal amount of time, certain functionality
+provided as part of this application offers the opportinity for secrets to be
+leaked and should thus be used with caution.
 
 This is no different than any other API or wallet service and the authentication
 for the API can (and should) be tied to a wallet service ensuring access to the
@@ -55,13 +56,8 @@ BW_PASSWORD
 BW_EMAIL
 ```
 
-### Environment variables (not recommended)
-Create the environment variables containing your details.
-
-I generally avoid recommending this method as it involves credentials to be
-stored unencrypted inside the environment where they can be easily accessed.
-It would also require them to be written in plaintext to disk for service
-automation.
+### Environment variables
+Create the environment variables containing the credentials.
 
 ## kwallet
 Store the above secrets in kwallet at `/Passwords/bwvault`
@@ -69,15 +65,6 @@ Store the above secrets in kwallet at `/Passwords/bwvault`
 ## libsecrets
 Use the libsecrets manager of your choice and store the above secrets as
 attributes at the same `/Passwords/bwvault`.
-
-The advantages of using kwallet or libsecret is that credentials are stored
-encrypted on disk and are generally unlocked when you unlock your computer. This
-reduces the chances of credential leakage.
-
-By restricting this application to userspace, and tying the local client to
-`BW_CLIENTSECRET` drawn from any of the above 3 credential handling methods,
-your bitwarden secrets can remain secret even if you are running the tool on a
-shared computer.
 
 ## Building
 Clone this repo then run `go build .`
@@ -99,15 +86,14 @@ Clone this repo then run `go build .`
   - `genkey <ip address|cidr range>` Create a 32 character random string to use
      as an API key, bound to the provided address or cidr range
   - `revoke <key>` Revokes the given key. Future iterations will allow for an ip or range to be provided if the key is lost.
-- `whitelist <IP or range>` Add the given IP or range to the access whitelist
-  - `drop <IP or range>` Delete the given IP or range from the access whitelist
 - `path/to/secret[?[field|property]=value` Get the secret at a given path,
   optionally followed by specific properties to read
 
 ## Usage
 
 Run the server
-```
+
+```plaintext
 $ bwv serve
 2022/04/03 07:20:33 Login complete
 2022/04/03 07:20:36 Master password configured
@@ -117,7 +103,8 @@ $ bwv serve
 ```
 
 Retrieve a credential
-```
+
+```plaintext
 $ bwv example/test
 [
   {
@@ -137,6 +124,7 @@ $ bwv example/test
 ```
 
 ### Wildcards
+
 The following wildcard patterns are currently supported
 
 - `*`, `./*` both of these return all credentials which do not have a folder
@@ -146,12 +134,16 @@ The following wildcard patterns are currently supported
 A future version may include more advanced search patterns.
 
 ### Filtering
-When only a single credential is being returned, this can be filtered to only return certain properties and/or fields by adding http query options onto the end of the path.
+
+When only a single credential is being returned, this can be filtered to only
+return certain properties and/or fields by adding http query options onto the
+end of the path.
 
 > Note:
 > Do not use filters with wildcards as this may give unexpected results.
 
-If only a single property or field is being returned, this will always be identified as `value` in the resulting json object.
+If only a single property or field is being returned, this will always be
+identified as `value` in the resulting json object.
 
 ```
 $ bwv example/test?property=password
@@ -160,10 +152,21 @@ $ bwv example/test?property=password
 }
 ```
 
-Multiple properties/fields can be requested either by specifying the keyword multiple times or using a comma separated string
+Multiple properties/fields can be requested with the following examples being
+equivelant
 
 ```
-$ bwv 'example/test?property=password&property=username&field=unseal-1,unseal-2'
+$ bwv example/test -p password -p username -f unseal-1 -f unseal-2
+{
+  "password": "GGAPP$KoQ499hDCBHqvCxURzzS$3bp*A",
+  "unseal-1": "abcdef",
+  "unseal-2": "123456",
+  "username": "invalid@example.com"
+}
+```
+
+```
+$ bwv 'example/test?properties=username,password&fields=unseal-1,unseal-2'
 {
   "password": "GGAPP$KoQ499hDCBHqvCxURzzS$3bp*A",
   "unseal-1": "abcdef",
@@ -173,6 +176,7 @@ $ bwv 'example/test?property=password&property=username&field=unseal-1,unseal-2'
 ```
 
 ### Whitelisting
+
 When you first try and run `bwv` it will setup the server.yaml file and add 127.0.0.0/24 as the only whitelisted ip range.
 
 To whitelist other IPs or ranges, either edit the configuration file or use the `whitelist` command.
@@ -185,13 +189,21 @@ HTTP only exists for running on a local network, behind a firewall where it cann
 outside world. It is serving your passwords and these should never be transmitted in plaintext, even when you trust the
 requesting device.
 
-I do not recommend using the HTTP only version, even for local connections. Setting up a local CA and certificates is simple
-and cheap and if you need to serve externally, letsencrypt is your friend.
+I do not recommend using the HTTP only version, even for local connections. Setting up a local CA and certificates is
+simple and cheap, and if you need to serve externally, letsencrypt is your friend.
 
 ### API tokens
-When connecting to the `bwv` server from any address other than `localhost`, an API token is required. Localhost uses either your `BW_CLIENTSECRET` or `BW_PASSWORD` to achieve this with the preference being `BW_CLIENTSECRET`.
 
-An api token is a random 32 character string which is stored encrypted in the server configuration. The encryption uses a `pbkdf2` key derived from your master password. You are given the plaintext string which should be submitted as a `Bearer` token when accessing the api. See below.
+When connecting to the `bwv` server from any address other than `localhost`, an
+API token is required.
+
+Localhost uses either your `BW_CLIENTSECRET` or `BW_PASSWORD` to achieve this
+with the preference being `BW_CLIENTSECRET`.
+
+An api token is a random 32 character string which is stored encrypted in the
+server configuration. The encryption uses a `pbkdf2` key derived from your
+master password. You are given the plaintext string which should be submitted as
+a `Bearer` token when accessing the api. See below.
 
 To generate an API token, use the genkey command.
 
@@ -206,7 +218,9 @@ token = TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO
 ========================================
 ```
 
-Tokens can be revoked either by specifying the token, or the address the token is associated with however if the address is part of a range, the token must be used.
+Tokens can be revoked either by specifying the token, or the address the token
+is associated with however if the address is part of a range, the token must be
+used.
 
 ```
 $ bwv revoke 192.168.1.5
@@ -216,117 +230,38 @@ $ bwv revoke 192.168.1.5
 ```
 
 ### Advanced configuration
-For more advanced configuration, create or edit the file at `${HOME}/.config/bwv/server.yaml` in which the following
-properties are allowed:
+For more advanced configuration, create or edit the file at
+`${HOME}/.config/bwv/server.yaml` in which the following properties are allowed:
 
 - `whitelist` A list of IP addresses allowed to access the service
 - `cert` An SSL certificate to secure your credentials in transit
 - `key` The SSL certificates key
-- `port` The port to listen on. This must be above 1024 if running in userspace. If port is 0, defaults to 6277
-- `apikeys` You generally do not want to touch this map. Use `./bwv genkey` and `./bwv revoke` to manage this.
+- `port` The port to listen on. This must be above 1024 if running in userspace.
+  If port is 0, defaults to 6277
+- `apikeys` You generally do not want to touch this map. Use `./bwv genkey`
+  and `./bwv revoke` to manage this.
 
 ## API
 The API for this application is simple.
 
-- `/reload` [INTERNAL] Tells the server to reload its config. Normally you do not need to access this endpoint.
+- `genkey` [INTERNAL]
+- `revokekey` [INTERNAL]
+- `/reload` [INTERNAL] Tells the server to reload its config. Normally you do
+  not need to access this endpoint.
 - `/path/to/credential` get the full contents at `path/to/credential`.
-- `/path/?property=username[,password]` A top level attribute from the credential such as username or password.
-- `/path/?field=my-custom-field[,another-field]` Fields are custom attributes set on the credential.
+- `/path/?property=username[,password]` A top level attribute from the
+  credential such as username or password.
+- `/path/?field=my-custom-field[,another-field]` Fields are custom attributes
+  set on the credential.
 
-All API calls must be made with an API token passed along with the request as a Bearer token.
-
-```
-$ curl -s -H "Authorization: Bearer TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO" "https://example.com:6277/example/test"
-```
-
-Failure to provide a token, using anything other than `Bearer`, or using a token not assigned to the address or range
-you are accessing the API from, will result in a `403 Permission Denied` response code.
-
-## A real-world example with Hashicorp Vault
-
-To use this to auto-unlock Hashicorp Vault, we need to create 2 items in Kubernetes, one is a configmap and the other a
-secret.
-
-The configmap contains the following script:
+All API calls must be made with an API token passed along with the request as a
+Bearer token.
 
 ```
-while true; do # Until told otherwise, enter an infinite loop
-  for i in 1 2 3; do # For each node in the cluster
-    while true; do # until we get a response from bwv
-
-      # get a key for the current node
-      # setting v to empty string if the connection cannot be established (bwv is not running)
-      v=$(wget -q -O - --header "Authorization: Bearer $BW_TOKEN" $BW_ADDR/$BW_PATH?field=unseal-$i 2>&1 | grep -v refused);
-      if [ "$v" != "" ]; then
-        break;
-      fi;
-
-      # if we didn't get a response, sleep for a second and try again
-      sleep 1;
-    done;
-
-    # Try and unseal the vault using the current key
-    vault operator unseal $(echo $v | awk -F\" "/value/{print \$4}");
-  done;
-
-  # If Vault is unsealed, break the outer loop
-  if [ $(vault status | grep Sealed | awk "{print \$NF}") = false ]; then
-    break;
-  fi;
-
-  # If not, sleep for a second and try again
-  sleep 1;
-done
+$ curl -s -H "Authorization: Bearer TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO" \
+    https://example.com:6277/example/test
 ```
 
-Create the configmap by saving the script above as `vault-unseal.sh` and then running
-
-```
-kubectl create cm vault-unseal --from-file vault-unseal.sh --dry-run=client -o yaml | kubectl -n vault apply -f -
-```
-
-Create a secret in Kubernetes with the server address, the path to your vault secret as stored in bitwarden and the API key
-generated with `bwv genkey`
-
-```
-kubectl create secret generic vault-bitwarden --from-literal=address=https://example.com:6277 --from-literal=path=example/test --from-literal=token=cKE6o3ZyV8z4jJW1MNTisetS1vSK3pLC
-```
-
-Edit your [vault helm chart values](https://github.com/hashicorp/vault-helm/blob/main/values.yaml) to include the configmap and secret.
-
-```
-server:
-  extraSecretEnvironmentVars:
-    - envName: BW_ADDR
-      secretName: vault-bitwarden
-      secretKey: address
-    - envName: BW_PATH
-      secretName: vault-bitwarden
-      secretKey: path
-    - envName: BW_TOKEN
-      secretName: vault-bitwarden
-      secretKey: token
-
-  volumes:
-    - name: vault-unseal
-      configMap:
-        name: vault-unseal
-
-  volumeMounts:
-     - mountPath: /vault/scripts
-       name: vault-unseal
-
-  postStart:
-  - "/bin/sh"
-  - "-ec"
-  - "sleep 2 && cp /vault/scripts/vault-unseal.sh /tmp/unseal.sh && chmod +x /tmp/unseal.sh && /tmp/unseal.sh && rm /tmp/unseal.sh"
-```
-
-Apply the changes to your vault installation and restart the Vault statefulset
-
-```
-kubectl scale statefulsets/vault --replicas=0
-helm upgrade vault hashicorp/vault -f values.yaml
-```
-
-When Vault is started, this script will be called and auto-unseal using the keys stored at unseal-1, unseal-2 and unseal-3.
+Failure to provide a token, using anything other than `Bearer`, or using a token
+not assigned to the address or range you are accessing the API from, will result
+in a `403 Permission Denied` response.

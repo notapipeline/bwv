@@ -10,6 +10,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/google/uuid v1.4.0
 	github.com/hokaccha/go-prettyjson v0.0.0-20211117102719-0474bc63780f
+	github.com/kylelemons/godebug v1.1.0
 	github.com/peterh/liner v1.2.2
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
@@ -18,6 +19,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	r00t2.io/gokwallet v1.0.0
 	r00t2.io/gosecret v1.1.5
+
 )
 
 require (

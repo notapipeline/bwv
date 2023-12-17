@@ -193,8 +193,7 @@ func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize 
 		err             error
 		req             *http.Request
 		ctx             context.Context = context.Background()
-		//userKey, userMac []byte          = cache.UserKey()
-		key, mac []byte
+		key, mac        []byte
 	)
 
 	if req, err = http.NewRequest("GET", attachment.URL, nil); err != nil {
@@ -222,9 +221,7 @@ func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize 
 		return nil, err
 	}
 
-	mac = key[32:]
-	key = key[:32]
-
+	mac, key = key[32:], key[:32]
 	if decrypted, err = crypto.DecryptAes(data, key, mac); err != nil {
 		log.Println("error decrypting", attachment.URL, err)
 		return nil, err

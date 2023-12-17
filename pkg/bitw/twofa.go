@@ -39,7 +39,7 @@ func twoFactorPrompt(resp *transport.TwoFactorRequiredError) (types.TwoFactorPro
 		if err != nil {
 			return -1, "", err
 		}
-		i, err := strconv.Atoi(input)
+		i, err := strconv.Atoi(string(input))
 		if err != nil {
 			return -1, "", err
 		}
@@ -52,5 +52,5 @@ func twoFactorPrompt(resp *transport.TwoFactorRequiredError) (types.TwoFactorPro
 	if err != nil {
 		return -1, "", err
 	}
-	return selected, token, nil
+	return selected, string(token), nil
 }

@@ -17,105 +17,49 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"regexp"
+	"net"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/notapipeline/bwv/pkg/transport"
-	"github.com/twpayne/go-pinentry"
 )
 
 func TestGenkeyCmd(t *testing.T) {
 	tests := []struct {
 		name        string
-		addresses   []string
-		email       string
+		addresses   []net.IP
 		expectedErr error
-		getPassword func() ([]byte, error)
 		responses   []transport.MockHttpResponse
 	}{
 		{
-			name: "no addresses assumes localhost",
-			addresses: []string{
-				"localhost",
+			name: "success",
+			addresses: []net.IP{
+				net.ParseIP("192.168.0.1"),
 			},
-			email:       "test@example.com",
 			expectedErr: nil,
-			getPassword: func() ([]byte, error) {
-				return []byte("password"), nil
-			},
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
-					Body: []byte(`{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`),
+					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
 				},
 				{
 					Code: 200,
-					Body: []byte(`{"statuscode": 200, "message":"stored token for address localhost"}`),
-				},
-			},
-		},
-		{
-			name:      "no email",
-			addresses: []string{"localhost"},
-			email:     "",
-			getPassword: func() ([]byte, error) {
-				return nil, nil
-			},
-			expectedErr: errors.New("invalid email address \"mail: no address\""),
-			responses: []transport.MockHttpResponse{
-				{
-					Code: 200,
-					Body: []byte(`{"kdf":0,"kdfIterations":100000,"kdfMemory":null,"kdfParallelism":null}`),
-				},
-				{
-					Code: 0,
-					Body: []byte(``),
-				},
-			},
-		},
-		{
-			name:      "rate limited",
-			addresses: []string{"localhost"},
-			email:     "test@example.com",
-			getPassword: func() ([]byte, error) {
-				return nil, nil
-			},
-			expectedErr: errors.New(`unable to get kdf info: "Bad Request: ` +
-				`{\"message\":\"Traffic from your network looks unusual. ` +
-				`Connect to a different network or try again later. [Error Code 6]\"}"`),
-			responses: []transport.MockHttpResponse{
-				{
-					Code: 400,
-					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`),
-				},
-				{
-					Code: 400,
-					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`),
+					Body: []byte(`{"message":{"192.168.0.1":"11111111111111111111111111111111"}}`),
 				},
 			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// Mock getPassword function
-			opwd := getPassword
-			defer func() {
-				getPassword = opwd
-			}()
-			getPassword = test.getPassword
-			email = test.email
-
-			// Mock transport.DefaultHttpClient.DoWithBackoff function
 			transport.DefaultHttpClient = &transport.MockHttpClient{
 				Responses: test.responses,
 			}
-			// Capture log output
+
 			var buf bytes.Buffer
 			log.SetOutput(&buf)
 			of := fatal
@@ -128,7 +72,37 @@ func TestGenkeyCmd(t *testing.T) {
 				log.Printf(format, v...)
 			}
 
-			genkeyCmd.Run(genkeyCmd, test.addresses)
+			orig := os.Stdout
+			defer func() {
+				os.Stdout = orig
+			}()
+
+			var (
+				r        *os.File
+				w        *os.File
+				err      error
+				response map[string]string
+			)
+			defer w.Close()
+
+			if r, w, err = os.Pipe(); err != nil {
+				t.Errorf("Unable to create pipe: %q", err)
+				return
+			}
+			os.Stdout = w
+
+			os.Args = []string{"bwv", "key", "genkey", "-a", "192.168.0.1"}
+			genkeyCmd.Run(genkeyCmd, os.Args)
+			w.Close()
+
+			var stdoutbuf strings.Builder
+			_, err = io.Copy(&stdoutbuf, r)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "testing: copying pipe: %v\n", err)
+				os.Exit(1)
+			}
+
+			o := stdoutbuf.String()
 
 			if test.expectedErr != nil {
 				var (
@@ -141,115 +115,12 @@ func TestGenkeyCmd(t *testing.T) {
 				return
 			}
 
-			var re = regexp.MustCompile(`(?m).*\t[a-zA-Z0-9]{32}`)
-			matches := re.FindAllString(buf.String(), -1)
-			if len(matches) != len(test.addresses) {
-				t.Errorf("Expected %d tokens, but got %d", len(test.addresses), len(matches))
+			if err = json.Unmarshal([]byte(o), &response); err != nil {
+				t.Errorf("Unable to unmarshal response body: %q", err)
 			}
-		})
-	}
-}
-func TestGetPassword(t *testing.T) {
-	tests := []struct {
-		name             string
-		expectedResult   string
-		expectedErr      error
-		mockClient       func(options ...pinentry.ClientOption) (c *pinentry.Client, err error)
-		mockReadPassword func(prompt string) (password string, err error)
-	}{
-		{
-			name:           "cancelled context",
-			expectedResult: "",
-			expectedErr:    fmt.Errorf("Cancelled"),
-			mockClient: func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
-				process := MockProcess{
-					value:  "",
-					status: true,
-					readlnerr: &pinentry.AssuanError{
-						Code: pinentry.AssuanErrorCodeCancelled,
-					},
-					lines: []struct {
-						line []byte
-						err  error
-					}{
-						{line: []byte("OK"), err: nil},
-						{line: []byte{}, err: &pinentry.AssuanError{Code: pinentry.AssuanErrorCodeCancelled}},
-						{line: []byte("BYE"), err: nil},
-					},
-				}
-				return pinentry.NewClient(pinentry.WithProcess(&process))
-			},
-			mockReadPassword: func(prompt string) (password string, err error) {
-				return "", nil
-			},
-		},
-		{
-			name:           "no pinentry binary",
-			expectedResult: "",
-			expectedErr:    fmt.Errorf("liner: function not supported in this terminal"),
-			mockClient: func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
-				return nil, fmt.Errorf("exec: \"pinentry\": executable file not found in $PATH")
-			},
-			mockReadPassword: func(prompt string) (password string, err error) {
-				return "", errors.New("liner: function not supported in this terminal")
-			},
-		},
-		{
-			name:           "liner: no password provided",
-			expectedResult: "",
-			expectedErr:    fmt.Errorf("No password provided"),
-			mockClient: func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
-				return nil, fmt.Errorf("exec: \"pinentry\": executable file not found in $PATH")
-			},
-			mockReadPassword: func(prompt string) (password string, err error) {
-				return "", nil
-			},
-		},
-		{
-			name:           "success",
-			expectedResult: "password",
-			expectedErr:    nil,
-			mockClient: func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
-				process := MockProcess{
-					value:  "password",
-					status: true,
-					lines: []struct {
-						line []byte
-						err  error
-					}{
-						{line: []byte("OK"), err: nil},
-						{line: []byte("D password"), err: nil},
-						{line: []byte("OK"), err: nil},
-						{line: []byte("BYE"), err: nil},
-					},
-				}
-				return pinentry.NewClient(pinentry.WithProcess(&process))
-			},
-			mockReadPassword: func(prompt string) (password string, err error) {
-				return "", nil
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ope := getPinentry
-			orp := readPassword
-			defer func() {
-				getPinentry = ope
-				readPassword = orp
-			}()
-			getPinentry = test.mockClient
-			readPassword = test.mockReadPassword
-			actualResult, actualErr := getPassword()
-
-			if string(actualResult) != test.expectedResult {
-				t.Errorf("Expected password %q, but got %q", test.expectedResult, actualResult)
-			}
-
-			if test.expectedErr != nil {
-				if actualErr.Error() != test.expectedErr.Error() {
-					t.Errorf("Expected error %v, but got %v", test.expectedErr, actualErr)
+			for _, address := range test.addresses {
+				if _, ok := response[address.String()]; !ok {
+					t.Errorf("Expected response to contain %q, but got %q", address.String(), response)
 				}
 			}
 		})

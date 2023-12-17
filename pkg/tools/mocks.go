@@ -13,34 +13,35 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
-package cmd
+package tools
 
+// MockProcess is a mock process for testing exec commands
 type MockProcess struct {
-	value               string
-	status              bool
-	readlnerr, closeerr error
-	starterr, writeerr  error
-	exit                int
-	lines               []struct {
-		line []byte
-		err  error
+	Status   bool
+	CloseErr error
+	StartErr error
+	WriteErr error
+	Exit     int
+	Lines    []struct {
+		Line []byte
+		Err  error
 	}
 }
 
 func (m *MockProcess) ReadLine() ([]byte, bool, error) {
-	line := m.lines[0]
-	m.lines = m.lines[1:]
-	return line.line, m.status, line.err
+	line := m.Lines[0]
+	m.Lines = m.Lines[1:]
+	return line.Line, m.Status, line.Err
 }
 
 func (m *MockProcess) Start(string, []string) error {
-	return m.starterr
+	return m.StartErr
 }
 
 func (m *MockProcess) Close() error {
-	return m.closeerr
+	return m.CloseErr
 }
 
 func (m *MockProcess) Write([]byte) (int, error) {
-	return m.exit, m.writeerr
+	return m.Exit, m.WriteErr
 }

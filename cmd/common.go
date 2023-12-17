@@ -17,21 +17,17 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"runtime/debug"
-	"strings"
 
-	"github.com/notapipeline/bwv/pkg/bitw"
+	"github.com/hokaccha/go-prettyjson"
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
-
-	"github.com/twpayne/go-pinentry"
 )
-
-var email string
 
 var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
 	if clientCmd.Debug {
@@ -40,61 +36,7 @@ var fatal func(format string, v ...interface{}) = func(format string, v ...inter
 	log.Fatalf(format, v...)
 }
 
-var createToken func() string = func() string {
-	b := new(bitw.Bwv)
-	return b.CreateToken()
-}
-
 var getSecretsFromUserEnvOrStore func(v bool) map[string][]byte = tools.GetSecretsFromUserEnvOrStore
-
-var clientEncrypt = func(password []byte, email, address string, kdf types.KDFInfo) (string, error) {
-	return crypto.Encrypt(password, email, address, kdf)
-}
-
-var getPassword func() ([]byte, error) = func() ([]byte, error) {
-	return func() ([]byte, error) {
-		var (
-			err         error
-			client      *pinentry.Client
-			password    string
-			usePinentry bool = true
-		)
-
-		if client, err = getPinentry(
-			pinentry.WithBinaryNameFromGnuPGAgentConf(),
-			pinentry.WithDesc("Please enter your Bitwarden master password."),
-			pinentry.WithGPGTTY(),
-			pinentry.WithPrompt("Password:"),
-			pinentry.WithTitle("Master password"),
-		); err != nil {
-			if password, err = readPassword("Please enter your Bitwarden master password: "); err != nil {
-				return nil, err
-			}
-			usePinentry = false
-		}
-
-		if usePinentry {
-			defer client.Close()
-			password, _, err = client.GetPIN()
-			if pinentry.IsCancelled(err) {
-				return nil, fmt.Errorf("Cancelled")
-			}
-		}
-		if password == "" {
-			return nil, fmt.Errorf("No password provided")
-		}
-		password = strings.TrimSpace(password)
-		return []byte(password), err
-	}()
-}
-
-var getPinentry func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) = func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
-	return pinentry.NewClient(options...)
-}
-
-var readPassword func(prompt string) (string, error) = func(prompt string) (string, error) {
-	return tools.ReadPassword(prompt)
-}
 
 func getKdf() (kdf types.KDFInfo) {
 	var ctx context.Context = context.Background()
@@ -133,4 +75,25 @@ func getEncryptedToken() string {
 	}
 
 	return token
+}
+
+func printResponse(r types.SecretResponse) error {
+	var (
+		b   []byte
+		err error
+	)
+	if b, err = json.Marshal(r.Message); err != nil {
+		return err
+	}
+
+	var structure interface{}
+	if err = json.Unmarshal(b, &structure); err != nil {
+		return err
+	}
+
+	if b, err = prettyjson.Marshal(structure); err != nil {
+		return err
+	}
+	fmt.Println(string(b))
+	return nil
 }

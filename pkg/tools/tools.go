@@ -16,12 +16,16 @@
 package tools
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/peterh/liner"
+	"github.com/twpayne/go-pinentry"
 )
 
-func ReadPassword(prompt string) (string, error) {
+// ReadPassword reads a password from the user via STDIN
+func ReadPassword(prompt string) ([]byte, error) {
 	line := liner.NewLiner()
 	line.SetCtrlCAborts(true)
 	defer line.Close()
@@ -34,12 +38,13 @@ func ReadPassword(prompt string) (string, error) {
 			line.Close()
 			os.Exit(0)
 		}
-		return "", err
+		return nil, err
 	}
-	return password, nil
+	return []byte(password), nil
 }
 
-func ReadLine(prompt string) (string, error) {
+// ReadLine reads a line of text from the user via STDIN
+func ReadLine(prompt string) ([]byte, error) {
 	line := liner.NewLiner()
 	line.SetCtrlCAborts(true)
 	defer line.Close()
@@ -52,16 +57,22 @@ func ReadLine(prompt string) (string, error) {
 			line.Close()
 			os.Exit(0)
 		}
-		return "", err
+		return nil, err
 	}
-	return password, nil
+	return []byte(password), nil
 }
 
+// getSecret gets a secret from the environment or secrets store
 func getSecret(what string) string {
 	var (
 		value string
 		err   error
+		ok    bool
 	)
+
+	if value, ok = os.LookupEnv(what); ok {
+		return value
+	}
 
 	if value, err = getSecretFromKWallet(what); err == nil {
 		return value
@@ -88,32 +99,73 @@ func GetSecretsFromUserEnvOrStore(userInteractive bool) map[string][]byte {
 	}
 
 	for k := range secrets {
-		// Default comes from environment
-		var value string = os.Getenv(k)
-		if value == "" {
-			// If not in environment, try to get from secrets store
-			value = getSecret(k)
-		}
-
-		if value == "" && userInteractive {
+		var s string = getSecret(k)
+		secrets[k] = []byte(s)
+		if s == "" && userInteractive {
 			switch k {
-			case "BW_PASSWORD", "BW_EMAIL":
-				value, _ = ReadLine(k + ": ")
+			case "BW_EMAIL":
+				secrets[k], _ = ReadLine(k + ": ")
+			case "BW_PASSWORD":
+				secrets[k], _ = GetPassword(k, "Please enter your password", "Password: ")
 			}
 		}
-		secrets[k] = []byte(value)
 	}
 	return secrets
 }
 
-// GetFromUser gets secrets from the user [deprecated]
+// GetPassword gets a password from the user
 //
-// In this instance, only the email and password are required
-// as this method will be used for MFA authentication and not
-// for API authentication.
-func GetFromUser() map[string]string {
-	secrets := make(map[string]string)
-	secrets["BW_EMAIL"], _ = ReadLine("Email: ")
-	secrets["BW_PASSWORD"], _ = ReadPassword("Password: ")
-	return secrets
+// This is a mockable entry point for testing and wraps the password function.
+var GetPassword func(title, description, prompt string) ([]byte, error) = password
+
+// passwword asks the user for a password using pinentry if available and
+// falls back to stdin if not.
+func password(title, description, prompt string) ([]byte, error) {
+	return func() ([]byte, error) {
+		var (
+			err         error
+			client      *pinentry.Client
+			password    string
+			usePinentry bool = true
+		)
+
+		if client, err = GetPinentry(
+			pinentry.WithBinaryNameFromGnuPGAgentConf(),
+			pinentry.WithDesc(description),
+			pinentry.WithGPGTTY(),
+			pinentry.WithPrompt(prompt),
+			pinentry.WithTitle(title),
+		); err != nil {
+			var b []byte
+			if b, err = readPassword(prompt); err != nil {
+				return nil, err
+			}
+			password = string(b)
+			usePinentry = false
+		}
+
+		if usePinentry {
+			defer client.Close()
+			password, _, err = client.GetPIN()
+			if pinentry.IsCancelled(err) {
+				return nil, fmt.Errorf("Cancelled")
+			}
+		}
+		if password == "" {
+			return nil, fmt.Errorf("No password provided")
+		}
+		password = strings.TrimSpace(password)
+		return []byte(password), err
+	}()
+}
+
+// GetPinentry gets a pinentry client
+//
+// This is a mockable entry point for testing and wraps the pinentry client.
+var GetPinentry func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) = func(options ...pinentry.ClientOption) (c *pinentry.Client, err error) {
+	return pinentry.NewClient(options...)
+}
+
+var readPassword func(prompt string) ([]byte, error) = func(prompt string) ([]byte, error) {
+	return ReadPassword(prompt)
 }

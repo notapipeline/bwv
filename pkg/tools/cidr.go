@@ -17,6 +17,7 @@ package tools
 
 import (
 	"encoding/binary"
+	"log"
 	"net"
 )
 
@@ -28,6 +29,7 @@ func IsMachineNetwork(addr string) bool {
 	}
 
 	for _, a := range addrs {
+		log.Println(a, addr)
 		if ipnet, ok := a.(*net.IPNet); ok && ipnet.Contains(net.ParseIP(addr)) {
 			return true
 		}

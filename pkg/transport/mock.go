@@ -37,16 +37,16 @@ type MockHttpClient struct {
 	Responses []MockHttpResponse
 }
 
-func (m *MockHttpClient) Get(ctx context.Context, urlstr string, recv interface{}) error {
-	return m.DoWithBackoff(context.Background(), nil, recv)
+func (m *MockHttpClient) Get(ctx context.Context, urlstr string, recv any) error {
+	return m.DoWithBackoff(ctx, nil, recv)
 }
 
 func (m *MockHttpClient) Post(ctx context.Context, urlstr string, recv, send any) error {
-	return m.DoWithBackoff(context.Background(), nil, recv)
+	return m.DoWithBackoff(ctx, nil, recv)
 }
 
-func (m *MockHttpClient) DoWithBackoff(ctx context.Context, req *http.Request, response interface{}) error {
-	return m.Do(context.Background(), req, response)
+func (m *MockHttpClient) DoWithBackoff(ctx context.Context, req *http.Request, response any) error {
+	return m.Do(ctx, req, response)
 }
 
 func (m *MockHttpClient) Do(ctx context.Context, req *http.Request, recv any) error {

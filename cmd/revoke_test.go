@@ -17,8 +17,8 @@ package cmd
 
 import (
 	"bytes"
-	"errors"
 	"log"
+	"os"
 	"strings"
 	"testing"
 
@@ -28,24 +28,23 @@ import (
 
 func TestRevokeCmd(t *testing.T) {
 	tests := []struct {
-		name        string
-		email       string
-		address     string
-		password    string
-		kdf         types.KDFInfo
-		expectedErr error
-		getPassword func() ([]byte, error)
-		responses   []transport.MockHttpResponse
+		name            string
+		addresses       []string
+		kdf             types.KDFInfo
+		expectedErr     error
+		expectedSuccess string
+		expectedFailed  string
+		responses       []transport.MockHttpResponse
 	}{
 		{
-			name:        "test successful revoke",
-			email:       "email@example.com",
-			address:     "127.0.0.1",
-			password:    "password",
-			expectedErr: nil,
-			getPassword: func() ([]byte, error) {
-				return []byte("password"), nil
+			name: "full revoke test success and failed",
+			addresses: []string{
+				"127.0.0.1",
+				"192.168.0.1",
 			},
+			expectedErr:     nil,
+			expectedSuccess: "Token revoked for address 127.0.0.1",
+			expectedFailed:  "Token not revoked for address 192.168.0.1",
 			responses: []transport.MockHttpResponse{
 				{
 					Code: 200,
@@ -53,84 +52,13 @@ func TestRevokeCmd(t *testing.T) {
 				},
 				{
 					Code: 200,
-					Body: []byte(`{"statuscode": 200, "message":"Token revoked for address 127.0.0.1"}`),
-				},
-			},
-		},
-		{
-			name:        "test invalid email",
-			email:       "email",
-			address:     "127.0.0.1",
-			password:    "password",
-			expectedErr: errors.New("invalid email address \"mail: missing '@' or angle-addr\""),
-			getPassword: func() ([]byte, error) {
-				return []byte("password"), nil
-			},
-			responses: []transport.MockHttpResponse{
-				{
-					Code: 200,
-					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
-				},
-				{
-					Code: 0,
-					Body: []byte(``),
-				},
-			},
-		},
-		{
-			name:        "test invalid password",
-			email:       "email@example.com",
-			address:     "127.0.0.1",
-			password:    "",
-			expectedErr: errors.New("invalid password \"invalid password\""),
-			getPassword: func() ([]byte, error) {
-				return nil, errors.New("invalid password")
-			},
-			responses: []transport.MockHttpResponse{
-				{
-					Code: 200,
-					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
-				},
-				{
-					Code: 0,
-					Body: []byte(``),
-				},
-			},
-		},
-		{
-			name:    "rate limited",
-			address: "localhost",
-			email:   "test@example.com",
-			getPassword: func() ([]byte, error) {
-				return nil, nil
-			},
-			expectedErr: errors.New(`unable to get kdf info: "Bad Request: ` +
-				`{\"message\":\"Traffic from your network looks unusual. ` +
-				`Connect to a different network or try again later. [Error Code 6]\"}"`),
-			responses: []transport.MockHttpResponse{
-				{
-					Code: 400,
-					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`),
-				},
-				{
-					Code: 400,
-					Body: []byte(`{"message":"Traffic from your network looks unusual.` +
-						` Connect to a different network or try again later. [Error Code 6]"}`),
+					Body: []byte(`{"message":{"revoked": ["127.0.0.1"],"failed": ["192.168.0.1"]}}`),
 				},
 			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// Mock getPassword function
-			opwd := getPassword
-			defer func() {
-				getPassword = opwd
-			}()
-			getPassword = test.getPassword
-			email = test.email
-			address = test.address
 			// Mock HTTP client
 			transport.DefaultHttpClient = &transport.MockHttpClient{
 				Responses: test.responses,
@@ -147,8 +75,13 @@ func TestRevokeCmd(t *testing.T) {
 				log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 				log.Printf(format, v...)
 			}
-			revokeCmd.Run(revokeCmd, []string{test.address, test.email})
 
+			os.Args = []string{"bwv", "key", "revoke"}
+			for _, address := range test.addresses {
+				os.Args = append(os.Args, "-a", address)
+			}
+
+			Execute()
 			var actual string = strings.TrimSpace(buf.String())
 			if test.expectedErr != nil {
 				var expected string = strings.TrimSpace(test.expectedErr.Error())
@@ -158,9 +91,13 @@ func TestRevokeCmd(t *testing.T) {
 				}
 				return
 			}
-			var msg string = "Token revoked for address 127.0.0.1"
-			if !strings.Contains(buf.String(), msg) {
-				t.Errorf("Expected log output to contain %q, but got %q", msg, buf.String())
+			t.Log(buf.String())
+			if !strings.Contains(buf.String(), test.expectedSuccess) {
+				t.Errorf("Expected log output to contain %q, but got %q", test.expectedSuccess, buf.String())
+			}
+
+			if !strings.Contains(buf.String(), test.expectedFailed) {
+				t.Errorf("Expected log output to contain %q, but got %q", test.expectedFailed, buf.String())
 			}
 		})
 	}

@@ -19,16 +19,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
-	"net/mail"
+	"net"
 
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
-)
-
-var (
-	address string
 )
 
 // revokeCmd represents the revoke command
@@ -38,70 +33,46 @@ var revokeCmd = &cobra.Command{
 	Long: `This command will revoke the token for a given address or cidr block.
 You must specify either an address or a cidr block. You cannot specify both.`,
 	Run: func(cmd *cobra.Command, args []string) {
+
 		var (
-			password []byte
-			err      error
-			token    string
-			kdf      types.KDFInfo
-			req      *http.Request
-			ctx      context.Context = context.Background()
+			ok           bool
+			r            map[string]any
+			err          error
+			response     types.SecretResponse
+			localAddress string          = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			ctx          context.Context = context.Background()
 		)
+		{
+			clientCmd.Token = getEncryptedToken()
+			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
+		}
 
-		if _, err = mail.ParseAddress(email); err != nil {
-			fatal("invalid email address %q", err)
+		err = transport.DefaultHttpClient.Post(ctx, localAddress+"/api/v1/storetoken", &response, addresses)
+		if err != nil {
+			fatal("unable to store token: %q", err)
 			return
 		}
 
-		if password, err = getPassword(); err != nil {
-			fatal("invalid password %q", err)
+		if r, ok = response.Message.(map[string]any); !ok {
+			fatal("unexpected response from server: %q", response.Message)
 			return
 		}
 
-		var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
-		if err = transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
-			fatal("unable to get kdf info: %q", err)
-			return
+		if _, ok = r["revoked"]; ok {
+			for _, address := range r["revoked"].([]any) {
+				log.Printf("Token revoked for address %s", address.(string))
+			}
 		}
 
-		if token, err = clientEncrypt(password, email, address, kdf); err != nil {
-			fatal("unable to encrypt token: %q", err)
-			return
+		if _, ok = r["failed"]; ok {
+			for _, address := range r["failed"].([]any) {
+				log.Printf("Token not revoked for address %s", address.(string))
+			}
 		}
-
-		// Send to server
-		ctx = context.WithValue(ctx, transport.AuthToken{}, token)
-		if req, err = http.NewRequest("POST", localAddress+"/api/v1/revoke", nil); err != nil {
-			fatal("unable to create request for %s: %q", address, err)
-			return
-		}
-
-		var r struct {
-			Code    int    `json:"statuscode"`
-			Message string `json:"message"`
-		} = struct {
-			Code    int    `json:"statuscode"`
-			Message string `json:"message"`
-		}{}
-
-		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
-			fatal("unable to send request for %s: %q", address, err)
-			return
-		}
-
-		if r.Code != 200 {
-			fatal("Failed to revoke token: %s", r.Message)
-			return
-		}
-
-		log.Printf("Token revoked for address %s", address)
 	},
 }
 
 func init() {
 	keyCmd.AddCommand(revokeCmd)
-	revokeCmd.Flags().StringVarP(&address, "address", "a", "", "IP address or CIDR block to revoke the token for")
-	revokeCmd.Flags().StringVarP(&email, "email", "e", "", "Email address for this key")
-	if err := genkeyCmd.MarkFlagRequired("email"); err != nil {
-		log.Fatal(err)
-	}
+	revokeCmd.Flags().IPSliceVarP(&addresses, "addresses", "a", []net.IP{}, "IP addresses or CIDR blocks to revoke the token for")
 }

@@ -35,6 +35,7 @@ import (
 var (
 	ConfigPath func(m ConfigMode) string      = getConfigPath
 	GetSecrets func(v bool) map[string][]byte = tools.GetSecretsFromUserEnvOrStore
+	exit       func(int)                      = os.Exit
 )
 
 type Config struct {
@@ -76,6 +77,7 @@ func (c *Config) Load(m ConfigMode) (err error) {
 	return
 }
 
+// loadYaml loads the config file from the user local config directory
 func (c *Config) loadYaml(m ConfigMode) (err error) {
 	var (
 		cp       string = ConfigPath(m)
@@ -93,10 +95,13 @@ func (c *Config) loadYaml(m ConfigMode) (err error) {
 	return yaml.Unmarshal(yamlFile, c)
 }
 
+// loadEnv loads the config from the environment
 func (c *Config) loadEnv() (err error) {
 	return env.Parse(c)
 }
 
+// MergeClientConfig merges the client config from the command line into the
+// config object
 func (c *Config) MergeClientConfig(cmd types.ClientCmd) {
 	if cmd.Server != "" {
 		c.Address = cmd.Server
@@ -109,44 +114,67 @@ func (c *Config) MergeClientConfig(cmd types.ClientCmd) {
 	}
 }
 
-func (c *Config) MergeServerConfig(cmd *types.ServeCmd) {
-	if len(cmd.Whitelist) > 0 {
-		c.Server.Whitelist = cmd.Whitelist
+// Whitelist returns a list of addresses that have had tokens issued to them
+// and are therefore allowed to connect to the server
+func (c *Config) Whitelist() (w []string) {
+	w = make([]string, 0)
+
+	for k := range c.Server.ApiKeys {
+		w = append(w, k)
 	}
+
+	return
+}
+
+// MergeServerConfig merges the server config from the command line into the
+// config object
+func (c *Config) MergeServerConfig(cmd *types.ServeCmd) error {
 	if len(cmd.ApiKeys) > 0 {
 		for k, v := range cmd.ApiKeys {
 			c.Server.ApiKeys[k] = v
 		}
 	}
+
 	if cmd.Cert != "" {
 		c.Server.Cert = cmd.Cert
 	}
+
 	if cmd.Key != "" {
 		c.Server.Key = cmd.Key
 	}
+
 	if cmd.Port != 0 {
 		c.Server.Port = cmd.Port
 	}
+
 	if cmd.Org != "" {
 		c.Server.Org = cmd.Org
 	}
+
 	if cmd.Collection != "" {
 		c.Server.Collection = cmd.Collection
 	}
+
 	if cmd.Debug {
 		c.Server.Debug = cmd.Debug
 	}
+
 	if cmd.Quiet {
 		c.Server.Quiet = cmd.Quiet
 	}
+
 	if cmd.SkipVerify {
 		c.Server.SkipVerify = cmd.SkipVerify
 	}
+
 	if cmd.Autoload {
 		c.Server.Autoload = cmd.Autoload
 	}
+
+	return c.Save()
 }
 
+// IsSecure returns true if the server is configured to use TLS
 func (c *Config) IsSecure() (secure bool) {
 	if c.Server.Cert != "" && c.Server.Key != "" {
 		secure = true
@@ -154,6 +182,7 @@ func (c *Config) IsSecure() (secure bool) {
 	return
 }
 
+// SetApiKey adds an API key to the config file for a given address
 func (c *Config) SetApiKey(address string, token types.CipherString) error {
 	if c.Server.ApiKeys == nil {
 		c.Server.ApiKeys = make(map[string]string)
@@ -165,6 +194,7 @@ func (c *Config) SetApiKey(address string, token types.CipherString) error {
 	return c.Save()
 }
 
+// DeleteApiKey removes an API key from the config file for a given address
 func (c *Config) DeleteApiKey(address string) error {
 	if _, ok := c.Server.ApiKeys[address]; !ok {
 		return fmt.Errorf("no token exists for address %s", address)
@@ -173,12 +203,8 @@ func (c *Config) DeleteApiKey(address string) error {
 	return c.Save()
 }
 
+// Save the config file to the user local config directory
 func (c *Config) Save() (err error) {
-	// Localhost address must always be whitelisted
-	if len(c.Server.Whitelist) == 0 {
-		c.Server.Whitelist = append(c.Server.Whitelist, "127.0.0.0/24")
-	}
-
 	var data []byte
 	if data, err = yaml.Marshal(c); err != nil {
 		return err
@@ -191,6 +217,7 @@ func (c *Config) Save() (err error) {
 	return os.WriteFile(cp, data, 0600)
 }
 
+// getConfigPath returns the path to the config file
 func getConfigPath(m ConfigMode) string {
 	home, _ := os.UserHomeDir()
 	if m == ConfigModeClient {
@@ -199,9 +226,10 @@ func getConfigPath(m ConfigMode) string {
 	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
 }
 
+// CheckApiKey checks if an API key is valid for a given address
 func (c *Config) CheckApiKey(addr string, key []byte) bool {
 	secrets := GetSecrets(false)
-	if addr == "127.0.0.1" || tools.ContainsIp("127.0.0.1/24", addr) {
+	if tools.IsMachineNetwork(addr) {
 		if bytes.Equal(key, secrets["BW_CLIENTSECRET"]) || bytes.Equal(key, secrets["BW_PASSWORD"]) {
 			return true
 		}
@@ -223,8 +251,9 @@ func (c *Config) CheckApiKey(addr string, key []byte) bool {
 		log.Println("        Please change your master password and client secret immediately")
 		log.Println("-----------------------------------------------------------------------------------------------")
 		_ = os.WriteFile("/tmp/bwv-compromised", []byte("1"), 0600)
-		log.Println("If this was a mistake or you have changed your master password and client secret, you can delete /tmp/bwv-compromised and restart the server")
-		log.Fatal("dead")
+		log.Println("If this was a mistake or you have changed your master password and client secret,")
+		log.Println("    you can delete /tmp/bwv-compromised and restart the server")
+		exit(1)
 		return false
 	}
 

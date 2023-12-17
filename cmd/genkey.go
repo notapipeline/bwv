@@ -22,17 +22,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
-	"net/http"
-	"net/mail"
+	"net"
 
 	"github.com/spf13/cobra"
 
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
-
-var addresses []string
 
 // genkeyCmd represents the genkey command
 var genkeyCmd = &cobra.Command{
@@ -69,89 +65,36 @@ var genkeyCmd = &cobra.Command{
 	falls back to reading from stdin.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
-			password []byte
-			err      error
-			kdf      types.KDFInfo
+			err          error
+			localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			response     types.SecretResponse
+			ctx          context.Context = context.Background()
 		)
-		for _, arg := range args {
-			var found bool = false
-			for _, address := range addresses {
-				if address == arg {
-					found = true
-				}
-			}
-			if !found {
-				addresses = append(addresses, arg)
-			}
-		}
-		type message struct {
-			Code    int    `json:"statuscode"`
-			Message string `json:"message"`
+
+		{
+			clientCmd.Token = getEncryptedToken()
+			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		}
 
-		if _, err = mail.ParseAddress(email); err != nil {
-			fatal("invalid email address %q", err)
-			return
-		}
-
-		if password, err = getPassword(); err != nil {
-			fatal("invalid password %q", err)
-			return
-		}
-
-		if len(addresses) == 0 {
-			addresses = append(addresses, "localhost")
-		}
-
-		var ctx context.Context = context.Background()
-		var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
-		if err = transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
-			fatal("unable to get kdf info: %q", err)
-			return
-		}
-
+		adrs := make([]string, len(addresses))
 		for _, address := range addresses {
-			var token string
-			if token = createToken(); token == "" {
-				fatal("unable to create token for %s: %q", address, err)
-				return
-			}
+			adrs = append(adrs, address.String())
+		}
 
-			var encrypted string
-			if encrypted, err = clientEncrypt(password, email, token, kdf); err != nil {
-				fatal("unable to encrypt token: %q", err)
-				return
-			}
-			// Send to server
-			var (
-				req *http.Request
-				ctx context.Context = context.Background()
-			)
+		err = transport.DefaultHttpClient.Post(ctx, localAddress+"/api/v1/storetoken", &response, adrs)
+		if err != nil {
+			fatal("unable to store token: %q", err)
+			return
+		}
 
-			ctx = context.WithValue(ctx, transport.AuthToken{}, encrypted)
-			if req, err = http.NewRequest("POST", localAddress+"/api/v1/storetoken", nil); err != nil {
-				fatal("unable to create request for %s: %q", address, err)
-				return
-			}
-			var r message
-			if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
-				fatal("unable to send request for %s: %q", address, err)
-			}
-
-			if r.Code != 200 {
-				fatal("Failed to store token: %s", r.Message)
-				return
-			}
-			log.Printf("%s\t%s\n", address, token)
+		if err = printResponse(response); err != nil {
+			fatal("Token has been stored but cannot be displayed: %q", err)
+			return
 		}
 	},
 }
 
 func init() {
 	keyCmd.AddCommand(genkeyCmd)
-	genkeyCmd.Flags().StringSliceVarP(&addresses, "address", "a", []string{}, "IP address or CIDR block for this key")
-	genkeyCmd.Flags().StringVarP(&email, "email", "e", "", "Email address for this key")
-	if err := genkeyCmd.MarkFlagRequired("email"); err != nil {
-		log.Fatal(err)
-	}
+	genkeyCmd.Flags().IPSliceVarP(&addresses, "address", "a", []net.IP{}, "IP address or CIDR block for this key")
 }

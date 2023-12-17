@@ -17,14 +17,12 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
-	"github.com/hokaccha/go-prettyjson"
 	"github.com/notapipeline/bwv/pkg/bitw"
 	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/transport"
@@ -120,20 +118,9 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			fatal("unable to send request for %s: %q", address, err)
 		}
 
-		var b []byte
-		if b, err = json.Marshal(r.Message); err != nil {
-			return err
+		if err = printResponse(r); err != nil {
+			fatal("unable to print response: %q", err)
 		}
-
-		var structure interface{}
-		if err = json.Unmarshal(b, &structure); err != nil {
-			return err
-		}
-
-		if b, err = prettyjson.Marshal(structure); err != nil {
-			return err
-		}
-		fmt.Println(string(b))
 		return nil
 	},
 }
@@ -142,7 +129,6 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	rootCmd.SilenceErrors = true
-	//rootCmd.SilenceUsage = true
 	if c, err := rootCmd.ExecuteC(); err != nil {
 		if rootCmd != c {
 			return

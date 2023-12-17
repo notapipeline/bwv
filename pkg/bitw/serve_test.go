@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,15 +46,11 @@ func setupSuite(t *testing.T) func(t *testing.T) {
 
 	err := os.WriteFile(config.ConfigPath(config.ConfigModeServer), []byte(`
 server:
-  whitelist:
-    - 127.0.0.0/24
-    - 192.168.16.1
-    - 192.168.16.4
   cert: cert.pem
   key: key.pem
   port: 8080
   apikeys:
-    example.com: abcdef123456
+    127.0.0.1: abcdef123456
     192.168.16.1: 2.MJZfa5JXC1DgB2KjQGIiKQ==|C6YSdz/i0K5hUQvp3cQWRw==|pQ7xH0FTfBQKx4Ij1EkG2EvHY/HDqIiDjCJ1USsjHnI=
 `), 0644)
 
@@ -147,6 +144,7 @@ func TestStoreToken(t *testing.T) {
 		expectedBody string
 		mocks        func()
 		ipAddress    string
+		remoteIp     string
 		token        string
 		method       string
 	}{
@@ -203,6 +201,7 @@ func TestStoreToken(t *testing.T) {
 			expectedCode: http.StatusOK,
 			expectedBody: "",
 			ipAddress:    "192.168.16.4",
+			remoteIp:     "127.0.0.1",
 			token:        "2.MJZfa5JXC1DgB2KjQGIiKQ==|C6YSdz/i0K5hUQvp3cQWRw==|pQ7xH0FTfBQKx4Ij1EkG2EvHY/HDqIiDjCJ1USsjHnI=",
 			method:       "POST",
 		},
@@ -228,6 +227,10 @@ func TestStoreToken(t *testing.T) {
 
 			if test.mocks != nil {
 				test.mocks()
+			}
+
+			if test.remoteIp == "" {
+				test.remoteIp = test.ipAddress
 			}
 
 			var cnf *config.Config = config.New()
@@ -267,8 +270,10 @@ func TestStoreToken(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			req.Body = io.NopCloser(bytes.NewReader([]byte("[\"" + test.ipAddress + "\"]")))
+
 			if test.ipAddress != "" {
-				req.RemoteAddr = test.ipAddress
+				req.RemoteAddr = test.remoteIp
 			}
 
 			if test.token != "" {
@@ -295,9 +300,10 @@ func TestStoreToken(t *testing.T) {
 			}
 
 			if test.expectedCode == http.StatusOK {
-				m := make(map[string]string)
+				m := make(map[string]map[string]string)
 				_ = json.Unmarshal(recorder.Body.Bytes(), &m)
-				if _, ok := m["token"]; !ok {
+				t.Log(m)
+				if _, ok := m["message"][test.ipAddress]; !ok {
 					t.Errorf("Expected token in response body")
 				}
 			}

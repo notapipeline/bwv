@@ -16,8 +16,12 @@
 package cmd
 
 import (
+	"net"
+
 	"github.com/spf13/cobra"
 )
+
+var addresses []net.IP
 
 // keyCmd represents the key command
 var keyCmd = &cobra.Command{

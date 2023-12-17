@@ -18,7 +18,6 @@ package types
 import "log"
 
 type ServeCmd struct {
-	Whitelist  []string          `yaml:"whitelist" env:"BW_WHITELIST" envSeparator:","`
 	Cert       string            `yaml:"cert" env:"BW_CERT"`
 	Key        string            `yaml:"key" env:"BW_KEY"`
 	Server     string            `yaml:"server" env:"BW_SERVER"`

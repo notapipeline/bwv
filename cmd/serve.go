@@ -167,7 +167,6 @@ var serveCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(serveCmd)
 
-	serveCmd.Flags().StringSliceVarP(&serve.Whitelist, "whitelist", "w", []string{}, "Comma-separated list of IP addresses or CIDR blocks to whitelist")
 	serveCmd.Flags().StringToStringVarP(&serve.ApiKeys, "api-keys", "k", map[string]string{}, "Comma-separated list of `hostname=token` to require")
 
 	serveCmd.Flags().StringVarP(&serve.Cert, "cert", "C", "", "Path to TLS certificate")

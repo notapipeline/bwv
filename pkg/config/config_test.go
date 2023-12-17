@@ -16,10 +16,14 @@
 package config
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/kylelemons/godebug/diff"
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/types"
@@ -38,15 +42,15 @@ func setupSuite(t *testing.T) func(t *testing.T) {
 	ConfigPath = func(m ConfigMode) string {
 		return filepath.Join(tempDir, "server.yaml")
 	}
+	GetSecrets = tools.GetSecretsFromUserEnvOrStore
+	exit = os.Exit
 	err := os.WriteFile(ConfigPath(ConfigModeServer), []byte(`
 server:
-  whitelist:
-    - 127.0.0.0/24
   cert: cert.pem
   key: key.pem
   port: 8080
   apikeys:
-    example.com: abcdef123456
+    192.168.16.1: abcdef123456
 `), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +60,11 @@ server:
 		ConfigPath = getConfigPath
 		GetSecrets = tools.GetSecretsFromUserEnvOrStore
 		cache.Reset()
+		os.Unsetenv("BW_CLIENTSECRET")
+		os.Unsetenv("BW_PASSWORD")
+		os.Unsetenv("BW_CLIENTID")
+		os.Unsetenv("BW_EMAIL")
+
 	}
 }
 
@@ -67,18 +76,6 @@ func TestConfig_Load(t *testing.T) {
 	c := New()
 	if err := c.Load(ConfigModeServer); err != nil {
 		t.Errorf("Expected nil error but got %v", err)
-	}
-
-	// Verify the loaded values
-	expectedWhitelist := []string{"127.0.0.0/24"}
-	if len(c.Server.Whitelist) != len(expectedWhitelist) {
-		t.Errorf("Expected whitelist length %d but got %d", len(expectedWhitelist), len(c.Server.Whitelist))
-	}
-
-	for i, ip := range c.Server.Whitelist {
-		if ip != expectedWhitelist[i] {
-			t.Errorf("Expected whitelist IP %q but got %q", expectedWhitelist[i], ip)
-		}
 	}
 
 	expectedCert := "cert.pem"
@@ -96,7 +93,7 @@ func TestConfig_Load(t *testing.T) {
 		t.Errorf("Expected port %d but got %d", expectedPort, c.Server.Port)
 	}
 
-	expectedAPIKeys := map[string]string{"example.com": "abcdef123456"}
+	expectedAPIKeys := map[string]string{"192.168.16.1": "abcdef123456"}
 	if len(c.Server.ApiKeys) != len(expectedAPIKeys) {
 		t.Errorf("Expected API keys length %d but got %d", len(expectedAPIKeys), len(c.Server.ApiKeys))
 	}
@@ -146,7 +143,7 @@ func TestConfig_Save(t *testing.T) {
 	c.Server.Cert = "cert.pem"
 	c.Server.Key = "key.pem"
 	c.Server.Port = 8080
-	c.Server.ApiKeys = map[string]string{"example.com": "abcdef123456"}
+	c.Server.ApiKeys = map[string]string{"192.168.16.1": "abcdef123456"}
 
 	// Save the config
 	if err = c.Save(); err != nil {
@@ -159,14 +156,12 @@ func TestConfig_Save(t *testing.T) {
 	}
 
 	expectedData := []byte(`server:
-  whitelist:
-  - 127.0.0.0/24
   cert: cert.pem
   key: key.pem
   server: ""
   port: 8080
   apikeys:
-    example.com: abcdef123456
+    192.168.16.1: abcdef123456
   org: ""
   collection: ""
   skipverify: false
@@ -178,82 +173,163 @@ port: 0
 token: ""
 `)
 	if string(data) != string(expectedData) {
-		t.Errorf("Expected saved config file:\n%s===\n\nBut got:\n%s===", string(expectedData), string(data))
+		t.Errorf(diff.Diff(string(expectedData), string(data)))
 	}
 }
 
-func TestConfig_CheckApiKey_Localhost(t *testing.T) {
+func TestConfig_CheckApiKey(t *testing.T) {
+	tests := []struct {
+		name        string
+		addr        string
+		key         []byte
+		expected    bool
+		expectedLog string
+		mocks       func()
+	}{
+		{
+			name:     "Valid",
+			addr:     "127.0.0.1",
+			key:      []byte("abcdef123456"),
+			expected: true,
+			mocks: func() {
+				GetSecrets = func(v bool) map[string][]byte {
+					return map[string][]byte{
+						"BW_CLIENTSECRET": []byte("abcdef123456"),
+					}
+				}
+			},
+		},
+		{
+			name:     "invalid key",
+			addr:     "127.0.0.1",
+			key:      []byte("invalidkey"),
+			expected: false,
+			mocks: func() {
+				os.Setenv("BW_CLIENTSECRET", "abcdef123456")
+				os.Setenv("BW_PASSWORD", "abcdef123456")
+			},
+		},
+		{
+			name:        "valid client secret remote addr kills server",
+			addr:        "87.26.123.1",
+			key:         []byte("abcdef123456"),
+			expected:    false,
+			expectedLog: "[FATAL]",
+			mocks: func() {
+				exit = func(code int) {}
+				os.Setenv("BW_CLIENTSECRET", "abcdef123456")
+				os.Setenv("BW_PASSWORD", "somerandompassword")
+			},
+		},
+		{
+			name:        "valid remote client",
+			addr:        "192.168.16.1",
+			key:         []byte("abcdef123456"),
+			expected:    true,
+			expectedLog: "",
+			mocks: func() {
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer setupSuite(t)(t)
+			if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
+				t.Fatal(err)
+			}
+
+			test.mocks()
+
+			var buf bytes.Buffer
+			log.SetOutput(&buf)
+
+			// Create a new config
+			c := New()
+			if err := c.Load(ConfigModeServer); err != nil {
+				t.Errorf("Expected nil error but got %v", err)
+			}
+
+			var actual = c.CheckApiKey(test.addr, test.key)
+
+			if test.expectedLog != "" {
+				if !strings.Contains(buf.String(), test.expectedLog) {
+					t.Errorf("Expected log output %q, but got %q", test.expectedLog, buf.String())
+				}
+				return
+			}
+
+			if actual != test.expected {
+				var as string = "invalid"
+				if test.expected {
+					as = "valid"
+				}
+				t.Errorf("Expected API key %q for address %q to be %s", test.key, test.addr, as)
+			}
+		})
+	}
+}
+
+func TestSetServerConfig(t *testing.T) {
 	teardownSuite := setupSuite(t)
 	defer teardownSuite(t)
 	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
 		t.Fatal(err)
 	}
+
 	// Create a new config
 	c := New()
 	if err := c.Load(ConfigModeServer); err != nil {
 		t.Errorf("Expected nil error but got %v", err)
 	}
 
-	// Check the API key for localhost
-	addr := "127.0.0.1"
-	key := []byte("abcdef123456")
-	GetSecrets = func(v bool) map[string][]byte {
-		return map[string][]byte{
-			"BW_CLIENTSECRET": key,
-		}
+	// Set the server config
+	cnf := types.ServeCmd{
+		Cert:       "cert.pem",
+		Key:        "key.pem",
+		Port:       8080,
+		ApiKeys:    map[string]string{"127.0.0.1": "111111111111"},
+		Org:        "test",
+		Collection: "test",
+		SkipVerify: true,
+		Debug:      true,
+		Quiet:      true,
+		Autoload:   true,
 	}
 
-	if !c.CheckApiKey(addr, key) {
-		t.Errorf("Expected API key %q for address %q to be valid", key, addr)
-	}
-}
+	// Verify the saved config file
+	var (
+		data []byte
+		err  error
+	)
 
-func TestConfig_CheckApiKey_EnvironmentVariables(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
-		t.Fatal(err)
-	}
-	// Create a new config
-	c := New()
-	if err := c.Load(ConfigModeServer); err != nil {
+	if err = c.MergeServerConfig(&cnf); err != nil {
 		t.Errorf("Expected nil error but got %v", err)
 	}
 
-	// Set the environment variables
-	os.Setenv("BW_CLIENTSECRET", "abcdef123456")
-	os.Setenv("BW_PASSWORD", "abcdef123456")
-
-	// Check the API key for localhost
-	addr := "127.0.0.1"
-	key := []byte("abcdef123456")
-
-	if !c.CheckApiKey(addr, key) {
-		t.Errorf("Expected API key %q for address %q to be valid", key, addr)
-	}
-
-	// Clean up the environment variables
-	os.Unsetenv("BW_CLIENTSECRET")
-	os.Unsetenv("BW_PASSWORD")
-}
-
-func TestConfig_CheckApiKey_InvalidKey(t *testing.T) {
-	teardownSuite := setupSuite(t)
-	defer teardownSuite(t)
-	if _, err := cache.Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf); err != nil {
+	if data, err = os.ReadFile(ConfigPath(ConfigModeServer)); err != nil {
 		t.Fatal(err)
 	}
-	// Create a new config
-	c := New()
-	if err := c.Load(ConfigModeServer); err != nil {
-		t.Errorf("Expected nil error but got %v", err)
-	}
 
-	// Check an invalid API key
-	addr := "127.0.0.1"
-	key := []byte("invalidkey")
-
-	if c.CheckApiKey(addr, key) {
-		t.Errorf("Expected API key %q for address %q to be invalid", key, addr)
+	expectedData := []byte(`server:
+  cert: cert.pem
+  key: key.pem
+  server: ""
+  port: 8080
+  apikeys:
+    127.0.0.1: "111111111111"
+    192.168.16.1: abcdef123456
+  org: test
+  collection: test
+  skipverify: true
+  debug: true
+  quiet: true
+  autoload: true
+address: ""
+port: 0
+token: ""
+`)
+	if string(data) != string(expectedData) {
+		t.Errorf(diff.Diff(string(expectedData), string(data)))
 	}
 }

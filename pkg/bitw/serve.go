@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime/debug"
 	"strings"
 
@@ -144,12 +145,12 @@ func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 	}
 
 	var (
-		useWhitelist bool = len(s.config.Server.Whitelist) != 0
+		useWhitelist bool = len(s.config.Whitelist()) != 0
 		matched      bool = false
 	)
 
 	if useWhitelist {
-		for _, ip := range s.config.Server.Whitelist {
+		for _, ip := range s.config.Whitelist() {
 			if ip == addr || tools.ContainsIp(ip, addr) {
 				matched = true
 				break
@@ -325,64 +326,106 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		err  error
-		addr map[string]string
+		err       error
+		addresses []string
 	)
 
-	if err = json.NewDecoder(r.Body).Decode(&addr); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&addresses); err != nil {
 		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
-	if err = s.config.DeleteApiKey(addr["address"]); err != nil {
+	if len(addresses) == 0 {
+		s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, err)
+		return
+	}
+
+	var responses map[string][]string = make(map[string][]string)
+
+	for _, a := range addresses {
+		if err = s.config.DeleteApiKey(a); err != nil {
+			if _, ok := responses["failed"]; !ok {
+				responses["failed"] = make([]string, 0)
+			}
+			responses["failed"] = append(responses["failed"], a)
+			continue
+		}
+
+		if _, ok := responses["revoked"]; !ok {
+			responses["revoked"] = make([]string, 0)
+		}
+		responses["revoked"] = append(responses["revoked"], a)
+	}
+
+	var response types.SecretResponse = types.SecretResponse{
+		Message: responses,
+	}
+
+	var b []byte
+	if b, err = json.Marshal(response); err != nil {
 		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
-	if err = s.config.Save(); err != nil {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, string(b))
 }
 
-// storeToken stores a token sent via POST in the Authorization header
-// The token is encrypted with the master password and stored in the
-// config file for later verification.
+// storeToken stores one or more tokens for addresses sent via POST.
+//
+// each token is encrypted with the master password and stored in the config file against the address for which it is requested with the token being
 func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
+	log.Println(r.Method, r.URL.Path)
 	if r.Method != "POST" {
 		s.writeResponseError(&w, "bwv denied the request", http.StatusMethodNotAllowed, nil)
 		return
 	}
 
 	var (
-		addr           string = strings.Split(r.RemoteAddr, ":")[0]
 		token          string
 		encryptedToken types.CipherString
 		err            error
+		addresses      []string
 	)
 
 	if !s.validate(w, r) {
 		return
 	}
 
-	token = s.Bwv.CreateToken()
-	if encryptedToken, err = s.Bwv.Secrets.Encrypt([]byte(token)); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&addresses); err != nil {
 		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
-	if err = s.config.SetApiKey(addr, encryptedToken); err != nil {
+	if len(addresses) == 0 {
 		s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, err)
 		return
 	}
 
+	var responses map[string]string = make(map[string]string)
+
+	for _, a := range addresses {
+		token = s.Bwv.CreateToken()
+		if encryptedToken, err = s.Bwv.Secrets.Encrypt([]byte(token)); err != nil {
+			s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
+			return
+		}
+
+		log.Println("token generated - storing token")
+		if err = s.config.SetApiKey(a, encryptedToken); err != nil {
+			s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, err)
+			return
+		}
+
+		responses[a] = token
+	}
+
+	var response types.SecretResponse = types.SecretResponse{
+		Message: responses,
+	}
+
 	var b []byte
-	if b, err = json.Marshal(struct {
-		Token string `json:"token"`
-	}{
-		Token: token,
-	}); err != nil {
+	if b, err = json.Marshal(response); err != nil {
 		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
@@ -411,6 +454,7 @@ func (s *HttpServer) kdf(w http.ResponseWriter, r *http.Request) {
 		kdf []byte
 		err error
 	)
+	log.Println("returning kdf info to", r.RemoteAddr)
 	if kdf, err = json.Marshal(s.Bwv.Secrets.KDF); err != nil {
 		s.writeResponseError(&w, fmt.Sprintf("error: %q", err), http.StatusInternalServerError, err)
 		return
@@ -427,6 +471,16 @@ func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bo
 		server   *http.ServeMux
 	)
 
+	if _, err = os.Stat("/tmp/bwv-compromised"); err == nil {
+		log.Println("-----------------------------------------------------------------------------------------------")
+		log.Println("[FATAL] Possible compromise detected")
+		log.Println("        The server has detected a possible compromise of the master password or client secret")
+		log.Println("        The server will now shut down and will not be restarted")
+		log.Println("        Please change your master password and client secret immediately")
+		log.Println("-----------------------------------------------------------------------------------------------")
+		os.Exit(1)
+	}
+
 	if err := s.config.Load(config.ConfigModeServer); err != nil {
 		log.Fatalf("Invalid config file: %q", err)
 	}
@@ -434,10 +488,6 @@ func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bo
 	s.config.MergeServerConfig(cmdConfig)
 	if s.config.Server.Port != 0 {
 		port = s.config.Server.Port
-	}
-
-	if !s.IsSecure() && len(s.config.Server.Whitelist) == 0 {
-		return fmt.Errorf("Cowardly - refusing to start unsecure credential server without a whitelist")
 	}
 
 	server = http.NewServeMux()
@@ -458,12 +508,12 @@ func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bo
 
 	s.Bwv.Setup()
 	if s.config.IsSecure() {
-		log.Printf("Listening for secure connections on :%d (whitelist %+v)\n", port, s.config.Server.Whitelist)
+		log.Printf("Listening for secure connections on :%d (whitelist %+v)\n", port, s.config.Whitelist())
 		err = http.ServeTLS(listener, server, s.config.Server.Cert, s.config.Server.Key)
 		return
 	}
 
-	log.Printf("Listening for unsecured connections on :%d (whitelist %+v)\n", port, s.config.Server.Whitelist)
+	log.Printf("Listening for unsecured connections on :%d (whitelist %+v)\n", port, s.config.Whitelist())
 	err = http.Serve(listener, server)
 	return err
 }
