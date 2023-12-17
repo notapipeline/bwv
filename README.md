@@ -36,6 +36,7 @@ leaked and should thus be used with caution.
 This is no different than any other API or wallet service and the authentication
 for the API can (and should) be tied to a wallet service ensuring access to the
 server is not available for users outside of your own current session.
+
 ---
 
 ## Configuration
