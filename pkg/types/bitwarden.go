@@ -172,5 +172,5 @@ type DataFile struct {
 
 // SecretResponse is returned between the `bwv` server and client
 type SecretResponse struct {
-	Message interface{} `json:"message"`
+	Message interface{} `json:"message" yaml:"message"`
 }

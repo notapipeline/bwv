@@ -15,8 +15,6 @@
  */
 package types
 
-import "log"
-
 type ServeCmd struct {
 	Cert       string            `yaml:"cert" env:"BW_CERT"`
 	Key        string            `yaml:"key" env:"BW_KEY"`
@@ -49,7 +47,6 @@ func (s *ServeCmd) Merge(c *ClientCmd) {
 	if !s.Quiet {
 		s.Quiet = c.Quiet
 	}
-	log.Printf("%+v\n%+v", s, c)
 }
 
 type ClientCmd struct {
@@ -59,6 +56,7 @@ type ClientCmd struct {
 	Debug      bool   `yaml:"debug" env:"BW_DEBUG"`
 	Quiet      bool   `yaml:"quiet" env:"BW_QUIET"`
 	Token      string `yaml:"token" env:"BW_TOKEN"`
+	Output     string `yaml:"output" env:"BW_OUTPUT"`
 }
 
 type VaultItem struct {

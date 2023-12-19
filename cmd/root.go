@@ -18,13 +18,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/notapipeline/bwv/pkg/bitw"
-	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
@@ -114,8 +113,30 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 
 		var r types.SecretResponse
 		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
-			log.Printf("%+v", clientCmd)
 			fatal("unable to send request for %s: %q", address, err)
+		}
+
+		var (
+			ok    bool
+			items []any
+		)
+		if _, ok = r.Message.(map[string]any); ok {
+			if _, ok := r.Message.(map[string]any)["name"]; !ok {
+				r.Message.(map[string]any)["name"] = vaultItem.Path
+			}
+		}
+
+		if items, ok = r.Message.([]any); ok {
+			for index, item := range items {
+				if name, ok := item.(map[string]any)["name"]; ok {
+					var n string = strings.Replace(vaultItem.Path, "*", "", -1)
+					if filepath.Base(n) != name.(string) {
+						n = filepath.Join(n, name.(string))
+					}
+
+					r.Message.([]any)[index].(map[string]any)["name"] = n
+				}
+			}
 		}
 
 		if err = printResponse(r); err != nil {
@@ -142,7 +163,8 @@ func Execute() {
 		for i := 1; i < len(os.Args); {
 			var f string = os.Args[i]
 			switch f {
-			case "-t", "--token", "-f", "--fields", "-p", "--params", "-a", "--attachments":
+			case "-t", "--token", "-f", "--fields", "-p", "--params",
+				"-a", "--attachments", "-P", "--path", "-o", "--output":
 				fallthrough
 			case "--config", "--server", "--port", "--cert", "--key":
 				args = append(args, os.Args[i])
@@ -180,34 +202,5 @@ func init() {
 	rootCmd.Flags().StringSliceVarP(&vaultItem.Attachments, "attachments", "a", []string{}, "Retrieve the attachment(s) from a vault item (may be specified multiple times)")
 	rootCmd.Flags().StringVarP(&vaultItem.Path, "path", "P", "", "Path to the vault item")
 	rootCmd.Flags().StringVarP(&clientCmd.Token, "token", "t", "", "Token for accessing the server")
-}
-
-func loadClientConfig() (err error) {
-	c := config.New()
-	if err = c.Load(config.ConfigModeClient); err != nil {
-		return err
-	}
-
-	if clientCmd.Token == "" {
-		clientCmd.Token = c.Token
-		if c.Token == "" {
-			fatal("no token specified")
-		}
-	}
-
-	if clientCmd.Server == "" {
-		clientCmd.Server = c.Address
-		if c.Address == "" {
-			clientCmd.Server = "localhost"
-		}
-	}
-
-	if clientCmd.Port == 0 {
-		clientCmd.Port = c.Port
-		if c.Port == 0 {
-			clientCmd.Port = bitw.DefaultPort
-		}
-	}
-
-	return
+	rootCmd.Flags().StringVarP(&clientCmd.Output, "output", "o", "", "Output format (json, yaml, table, secret (default json))")
 }

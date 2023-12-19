@@ -20,15 +20,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"runtime/debug"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kyaml "sigs.k8s.io/yaml"
+
 	"github.com/hokaccha/go-prettyjson"
+	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/notapipeline/bwv/pkg/bitw"
+	"github.com/notapipeline/bwv/pkg/config"
 	"github.com/notapipeline/bwv/pkg/crypto"
 	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
+// fatal is a wrapper around log.Fatalf that will print a stack trace if
+// the debug flag is set
 var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
 	if clientCmd.Debug {
 		debug.PrintStack()
@@ -36,8 +46,11 @@ var fatal func(format string, v ...interface{}) = func(format string, v ...inter
 	log.Fatalf(format, v...)
 }
 
+// getSecretsFromUserEnvOrStore is a wrapper around tools.GetSecretsFromUserEnvOrStore
 var getSecretsFromUserEnvOrStore func(v bool) map[string][]byte = tools.GetSecretsFromUserEnvOrStore
 
+// getKdf reads kdf info from the local bwv server for encrypting data sent to
+// the server
 func getKdf() (kdf types.KDFInfo) {
 	var ctx context.Context = context.Background()
 	var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
@@ -47,6 +60,7 @@ func getKdf() (kdf types.KDFInfo) {
 	return
 }
 
+// getEncryptedToken encrypts the token using the password and email address
 func getEncryptedToken() string {
 	var (
 		secrets map[string][]byte = getSecretsFromUserEnvOrStore(false)
@@ -78,6 +92,125 @@ func getEncryptedToken() string {
 }
 
 func printResponse(r types.SecretResponse) error {
+	switch clientCmd.Output {
+	case "yaml":
+		return printYAML(r)
+	case "secret":
+		return printSecret(r)
+	case "table":
+		return printTable(r)
+	case "json":
+		fallthrough
+	default:
+		return printJSON(r)
+	}
+}
+
+func printTable(r types.SecretResponse) error {
+	t := table.NewWriter()
+	t.SetOutputMirror(os.Stdout)
+	var ok bool
+	if _, ok = r.Message.(map[string]any); !ok {
+		log.Println("Unable to print response as table")
+		return printJSON(r)
+	}
+
+	t.AppendHeader(table.Row{"Key", "Value"})
+	for k, v := range r.Message.(map[string]any) {
+		t.AppendRow([]interface{}{k, v})
+	}
+	t.Render()
+	return nil
+}
+
+func toSecret(r map[string]any) error {
+	var (
+		name string
+		ok   bool
+		data map[string][]byte = make(map[string][]byte)
+		b    []byte
+		err  error
+	)
+
+	if name, ok = r["name"].(string); !ok {
+		name = "CHANGEME"
+	}
+
+	for k, v := range r {
+		switch k {
+		case "name", "revision_date",
+			"folder_id", "id":
+			continue
+		}
+		if v, ok := v.(string); ok {
+			data[k] = []byte(v)
+		}
+
+		if v, ok := v.(map[string]any); ok {
+			for kk, vv := range v {
+				data[k+"."+kk] = []byte(vv.(string))
+			}
+		}
+	}
+
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Data: data,
+		Type: "Opaque",
+	}
+
+	fmt.Println("---")
+	if b, err = kyaml.Marshal(secret); err != nil {
+		return err
+	}
+
+	fmt.Println(string(b))
+
+	return nil
+}
+
+// printSecret prints the response from the server in a kubernetes secret format
+func printSecret(r types.SecretResponse) error {
+	var (
+		ok   bool
+		err  error
+		list []interface{}
+	)
+
+	if list, ok = r.Message.([]interface{}); ok {
+		for _, v := range list {
+			if err = toSecret(v.(map[string]any)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return toSecret(r.Message.(map[string]any))
+}
+
+func printYAML(r types.SecretResponse) error {
+	var (
+		b   []byte
+		err error
+	)
+	if b, err = kyaml.Marshal(r.Message); err != nil {
+		return err
+	}
+
+	fmt.Println(string(b))
+	return nil
+}
+
+// printResponse prints the response from the server in a pretty format
+func printJSON(r types.SecretResponse) error {
 	var (
 		b   []byte
 		err error
@@ -96,4 +229,35 @@ func printResponse(r types.SecretResponse) error {
 	}
 	fmt.Println(string(b))
 	return nil
+}
+
+// loadClientConfig loads the client config from the config file
+func loadClientConfig() (err error) {
+	c := config.New()
+	if err = c.Load(config.ConfigModeClient); err != nil {
+		return err
+	}
+
+	if clientCmd.Token == "" {
+		clientCmd.Token = c.Token
+		if c.Token == "" {
+			fatal("no token specified")
+		}
+	}
+
+	if clientCmd.Server == "" {
+		clientCmd.Server = c.Address
+		if c.Address == "" {
+			clientCmd.Server = "localhost"
+		}
+	}
+
+	if clientCmd.Port == 0 {
+		clientCmd.Port = c.Port
+		if c.Port == 0 {
+			clientCmd.Port = bitw.DefaultPort
+		}
+	}
+
+	return
 }

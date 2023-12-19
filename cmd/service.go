@@ -78,7 +78,6 @@ var statusCommand = &cobra.Command{
 	Short: "Status of the service",
 	Long:  `Status of the service`,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Println("Status of service")
 		var (
 			status string
 			err    error
@@ -95,7 +94,9 @@ var installServiceCommand = &cobra.Command{
 	Short: "Install the service",
 	Long:  `Install the service`,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Println("Install service")
+		if err := unix.InstallService(appName); err != nil {
+			log.Fatal(err)
+		}
 	},
 }
 
@@ -104,7 +105,6 @@ var removeServiceCommand = &cobra.Command{
 	Short: "Remove the service",
 	Long:  `Remove the service`,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Println("Remove service")
 		if err := unix.RemoveService(appName); err != nil {
 			log.Fatal(err)
 		}

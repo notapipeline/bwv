@@ -154,7 +154,9 @@ $ bwv example/test?property=password
 ```
 
 Multiple properties/fields can be requested with the following examples being
-equivelant
+equivelant.
+
+#### Using flags
 
 ```
 $ bwv example/test -p password -p username -f unseal-1 -f unseal-2
@@ -165,6 +167,8 @@ $ bwv example/test -p password -p username -f unseal-1 -f unseal-2
   "username": "invalid@example.com"
 }
 ```
+
+#### Using url parameters
 
 ```
 $ bwv 'example/test?properties=username,password&fields=unseal-1,unseal-2'
@@ -178,20 +182,24 @@ $ bwv 'example/test?properties=username,password&fields=unseal-1,unseal-2'
 
 ### Whitelisting
 
-When you first try and run `bwv` it will setup the server.yaml file and add 127.0.0.0/24 as the only whitelisted ip range.
+> Localhost and the machine network is always whitelisted. This is done by
+> reading the machine interfaces.
 
-To whitelist other IPs or ranges, either edit the configuration file or use the `whitelist` command.
+To whitelist other IPs or ranges, you need to generate tokens for them. This is
+done by using the `key gen` command.
 
 ```
-$ bwv whitelist 192.168.1.8/30
+$ bwv key gen 192.168.1.8/30
 ```
 
-HTTP only exists for running on a local network, behind a firewall where it cannot and should never be accessed from the
-outside world. It is serving your passwords and these should never be transmitted in plaintext, even when you trust the
-requesting device.
+HTTP only exists for running on a local network, behind a firewall where it
+cannot and should never be accessed from the outside world. It is serving your
+passwords and these should never be transmitted in plaintext, even when you
+trust the requesting device.
 
-I do not recommend using the HTTP only version, even for local connections. Setting up a local CA and certificates is
-simple and cheap, and if you need to serve externally, letsencrypt is your friend.
+I do not recommend using the HTTP only version, even for local connections.
+Setting up a local CA and certificates is simple and cheap, and if you need to
+serve externally, letsencrypt is your friend.
 
 ### API tokens
 
