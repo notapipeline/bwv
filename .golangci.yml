@@ -5,10 +5,30 @@
 # errcheck (all ignores must be explicit), govet, ineffassign and unused.
 # Deliberate error ignores are marked in-code with `_ =` rather than excluded
 # here, so nothing is silently swallowed.
+#
+# Complexity: gocyclo (cyclomatic) and gocognit (cognitive) enforce an
+# aspirational bar on new code. The handful of functions already over the bar
+# are marked in-code with `//nolint` + a TODO so they stay visible as debt to
+# decompose; ratchet the thresholds down as they're paid off. Tests are exempt
+# (table-driven tests are legitimately "complex" by these metrics).
 version: "2"
 
 linters:
   default: standard
+  enable:
+    - gocognit
+    - gocyclo
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gocognit
+          - gocyclo
 
 formatters:
   enable:

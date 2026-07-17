@@ -149,7 +149,7 @@ func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv any)
 // against the `Err` property.
 //
 // On success the response body will be JSON decoded into the given recv object.
-func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
+func (c *client) Do(ctx context.Context, req *http.Request, recv any) error { //nolint:gocyclo // TODO: extract the status-code switch into a classifier (cyclomatic complexity 17)
 	if token, ok := ctx.Value(AuthToken{}).(string); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

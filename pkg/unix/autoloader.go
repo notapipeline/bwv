@@ -185,7 +185,7 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 }
 
 // addCipherKeys adds the attachments from the given cipher to the agents
-func (a *Autoloader) addCipherKeys(autoload string, c *bitw.DecryptedCipher) (errors []error) {
+func (a *Autoloader) addCipherKeys(autoload string, c *bitw.DecryptedCipher) (errors []error) { //nolint:gocognit // TODO: split attachment decode / ssh / gpg branches (cognitive complexity 24)
 	var attachments map[string]string
 	switch autoload {
 	case "true":

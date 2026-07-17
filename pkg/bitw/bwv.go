@@ -97,7 +97,7 @@ func (b *Bwv) SetRegion(region Location) {
 }
 
 // Get returns a slice of DecryptedCipher objects that match the path
-func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
+func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) { //nolint:gocognit // TODO: decompose the per-chunk match/decrypt goroutine (cognitive complexity 25)
 	var (
 		entry         = filepath.Base(path)
 		folder        = filepath.Dir(path)
