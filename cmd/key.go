@@ -26,7 +26,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var addresses []net.IP
+var addresses []string
+
+// validateAddresses ensures each entry is a valid IP or CIDR network address, as
+// the pre-rewrite command did. A CIDR must be its network address (e.g.
+// 192.168.0.0/16, not 192.168.0.5/16).
+func validateAddresses(addrs []string) error {
+	if len(addrs) == 0 {
+		return fmt.Errorf("at least one -a address or CIDR block is required")
+	}
+	for _, addr := range addrs {
+		if net.ParseIP(addr) != nil {
+			continue
+		}
+		ip, ipnet, err := net.ParseCIDR(addr)
+		if err != nil {
+			return fmt.Errorf("invalid IP or CIDR block %q", addr)
+		}
+		if !ipnet.IP.Equal(ip) {
+			return fmt.Errorf("CIDR block %q is not a network address (did you mean %q?)", addr, ipnet)
+		}
+	}
+	return nil
+}
 
 // keyCmd represents the key command
 var keyCmd = &cobra.Command{
@@ -76,17 +98,17 @@ var genkeyCmd = &cobra.Command{
 			ctx          = context.Background()
 		)
 
+		if err = validateAddresses(addresses); err != nil {
+			fatal("%s", err)
+			return
+		}
+
 		{
 			clientCmd.Token = getEncryptedToken()
 			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		}
 
-		adrs := make([]string, 0, len(addresses))
-		for _, address := range addresses {
-			adrs = append(adrs, address.String())
-		}
-
-		err = transport.DefaultHttpClient.Post(ctx, localAddress+"/api/v1/storetoken", &response, adrs)
+		err = transport.DefaultHttpClient.Post(ctx, localAddress+"/api/v1/storetoken", &response, addresses)
 		if err != nil {
 			fatal("unable to store token: %q", err)
 			return
@@ -114,6 +136,11 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 			localAddress = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 			ctx          = context.Background()
 		)
+		if err = validateAddresses(addresses); err != nil {
+			fatal("%s", err)
+			return
+		}
+
 		{
 			clientCmd.Token = getEncryptedToken()
 			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
@@ -148,8 +175,8 @@ func init() {
 	rootCmd.AddCommand(keyCmd)
 
 	keyCmd.AddCommand(genkeyCmd)
-	genkeyCmd.Flags().IPSliceVarP(&addresses, "address", "a", []net.IP{}, "IP address or CIDR block for this key")
+	genkeyCmd.Flags().StringSliceVarP(&addresses, "address", "a", []string{}, "IP address or CIDR block for this key")
 
 	keyCmd.AddCommand(revokeCmd)
-	revokeCmd.Flags().IPSliceVarP(&addresses, "addresses", "a", []net.IP{}, "IP addresses or CIDR blocks to revoke the token for")
+	revokeCmd.Flags().StringSliceVarP(&addresses, "addresses", "a", []string{}, "IP addresses or CIDR blocks to revoke the token for")
 }

@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -33,15 +33,13 @@ import (
 func TestGenkeyCmd(t *testing.T) {
 	tests := []struct {
 		name        string
-		addresses   []net.IP
+		addresses   []string
 		expectedErr error
 		responses   []transport.MockHttpResponse
 	}{
 		{
-			name: "success",
-			addresses: []net.IP{
-				net.ParseIP("192.168.0.1"),
-			},
+			name:        "success",
+			addresses:   []string{"192.168.0.1"},
 			expectedErr: nil,
 			responses: []transport.MockHttpResponse{
 				{
@@ -53,6 +51,26 @@ func TestGenkeyCmd(t *testing.T) {
 					Body: []byte(`{"message":{"192.168.0.1":"11111111111111111111111111111111"}}`),
 				},
 			},
+		},
+		{
+			name:        "cidr block",
+			addresses:   []string{"10.0.0.0/8"},
+			expectedErr: nil,
+			responses: []transport.MockHttpResponse{
+				{
+					Code: 200,
+					Body: []byte(`{"kdf":0,"kdfIterations":1000,"kdfMemory":null,"kdfParallelism":null}`),
+				},
+				{
+					Code: 200,
+					Body: []byte(`{"message":{"10.0.0.0/8":"11111111111111111111111111111111"}}`),
+				},
+			},
+		},
+		{
+			name:        "rejects non-network cidr",
+			addresses:   []string{"192.168.0.5/16"},
+			expectedErr: fmt.Errorf(`CIDR block "192.168.0.5/16" is not a network address (did you mean "192.168.0.0/16"?)`),
 		},
 	}
 
@@ -92,19 +110,13 @@ func TestGenkeyCmd(t *testing.T) {
 			}
 			os.Stdout = w
 
-			os.Args = []string{"bwv", "key", "gen", "-a", "192.168.0.1"}
+			addresses = nil // pflag StringSlice appends across in-process Execute calls
+			os.Args = []string{"bwv", "key", "gen"}
+			for _, address := range test.addresses {
+				os.Args = append(os.Args, "-a", address)
+			}
 			Execute()
 			_ = w.Close()
-
-			// gen must POST the store-token endpoint with exactly the requested
-			// addresses - no empty-string padding from a mis-sized slice.
-			mock := transport.DefaultHttpClient.(*transport.MockHttpClient)
-			if !strings.HasSuffix(mock.LastPostURL, "/api/v1/storetoken") {
-				t.Errorf("gen posted to %q, want suffix /api/v1/storetoken", mock.LastPostURL)
-			}
-			if got, ok := mock.LastPostBody.([]string); !ok || len(got) != 1 || got[0] != "192.168.0.1" {
-				t.Errorf("gen sent addresses %#v, want [192.168.0.1]", mock.LastPostBody)
-			}
 
 			var stdoutbuf strings.Builder
 			_, err = io.Copy(&stdoutbuf, r)
@@ -126,12 +138,22 @@ func TestGenkeyCmd(t *testing.T) {
 				return
 			}
 
+			// gen must POST the store-token endpoint with exactly the requested
+			// addresses (IPs and CIDR blocks alike) - no empty-string padding.
+			mock := transport.DefaultHttpClient.(*transport.MockHttpClient)
+			if !strings.HasSuffix(mock.LastPostURL, "/api/v1/storetoken") {
+				t.Errorf("gen posted to %q, want suffix /api/v1/storetoken", mock.LastPostURL)
+			}
+			if got, ok := mock.LastPostBody.([]string); !ok || !reflect.DeepEqual(got, test.addresses) {
+				t.Errorf("gen sent addresses %#v, want %#v", mock.LastPostBody, test.addresses)
+			}
+
 			if err = json.Unmarshal([]byte(o), &response); err != nil {
 				t.Errorf("Unable to unmarshal response body: %q", err)
 			}
 			for _, address := range test.addresses {
-				if _, ok := response[address.String()]; !ok {
-					t.Errorf("Expected response to contain %q, but got %q", address.String(), response)
+				if _, ok := response[address]; !ok {
+					t.Errorf("Expected response to contain %q, but got %q", address, response)
 				}
 			}
 		})
@@ -188,6 +210,7 @@ func TestRevokeCmd(t *testing.T) {
 				log.Printf(format, v...)
 			}
 
+			addresses = nil // pflag StringSlice appends across in-process Execute calls
 			os.Args = []string{"bwv", "key", "revoke"}
 			for _, address := range test.addresses {
 				os.Args = append(os.Args, "-a", address)
@@ -216,6 +239,29 @@ func TestRevokeCmd(t *testing.T) {
 
 			if !strings.Contains(buf.String(), test.expectedFailed) {
 				t.Errorf("Expected log output to contain %q, but got %q", test.expectedFailed, buf.String())
+			}
+		})
+	}
+}
+
+func TestValidateAddresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		addrs   []string
+		wantErr bool
+	}{
+		{"single ip", []string{"192.168.0.1"}, false},
+		{"ipv6", []string{"::1"}, false},
+		{"cidr network", []string{"10.0.0.0/8"}, false},
+		{"mixed ip and cidr", []string{"192.168.0.1", "10.0.0.0/8"}, false},
+		{"empty", nil, true},
+		{"garbage", []string{"not-an-address"}, true},
+		{"non-network cidr", []string{"192.168.0.5/16"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateAddresses(tt.addrs); (err != nil) != tt.wantErr {
+				t.Errorf("validateAddresses(%v) error = %v, wantErr %v", tt.addrs, err, tt.wantErr)
 			}
 		})
 	}
