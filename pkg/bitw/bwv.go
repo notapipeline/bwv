@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/awnumar/memguard"
@@ -44,7 +45,7 @@ type Server struct {
 }
 
 const (
-	RECONCILE time.Duration = 5
+	RECONCILE time.Duration = 5 * time.Minute
 	CHUNKSIZE int           = 5
 	EU        Location      = "eu"
 	GLOBAL    Location      = "com"
@@ -59,6 +60,11 @@ type Bwv struct {
 	servers  map[Location]*Server
 	lr       *types.LoginResponse
 	autoload *chan bool
+
+	// reconcilePaused blocks the reconcile loop while a re-authentication is in
+	// progress. It replaces an earlier toggle-over-a-channel scheme that
+	// desynced whenever an extra auth signal fired.
+	reconcilePaused atomic.Bool
 }
 
 // NewBwv creates a new Bwv object
@@ -96,7 +102,7 @@ func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 		entry         string = filepath.Base(path)
 		folder        string = filepath.Dir(path)
 		fid           uuid.UUID
-		ciphers       [][]types.Secret      = b.chunkSplitCiphers(b.Secrets.Data.Sync.Secrets, CHUNKSIZE)
+		ciphers       [][]types.Secret      = chunk(b.Secrets.Data.Sync.Secrets, CHUNKSIZE)
 		decryptedchan chan *DecryptedCipher = make(chan *DecryptedCipher)
 		decrypted     []DecryptedCipher     = make([]DecryptedCipher, 0)
 	)
@@ -113,26 +119,22 @@ func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 		go func(mychunk []types.Secret, folder, entry string, fid uuid.UUID) {
 			defer wg.Done()
 			for _, item := range mychunk {
-				var name string
-				var err error
-				if (folder == "." && item.FolderID == nil) || (item.FolderID != nil && *item.FolderID == fid) {
-					if name, err = b.Secrets.DecryptCipherStr(item.Name, item.Key); err == nil && (name == entry || entry == "*") {
-						decryptedchan <- NewDecryptedCipher(b).Decrypt(item, name)
-					}
+				matchesFolder := folder == "*" ||
+					(folder == "." && item.FolderID == nil) ||
+					(item.FolderID != nil && *item.FolderID == fid)
+
+				if matchesFolder {
+					name, err := b.Secrets.DecryptCipherStr(item.Name, item.Key)
 					if err != nil {
 						log.Printf("[ERROR] cannot decrypt name for cipher id=%s: %v", item.ID, err)
+						continue
 					}
-				} else if folder == "*" {
-					if name, err = b.Secrets.DecryptCipherStr(item.Name, item.Key); err == nil && (name == entry || entry == "*") {
+					if name == entry || entry == "*" {
 						decryptedchan <- NewDecryptedCipher(b).Decrypt(item, name)
-					}
-					if err != nil {
-						log.Printf("[ERROR] cannot decrypt name for cipher id=%s: %v", item.ID, err)
 					}
 				} else if item.ID.String() == entry {
 					decryptedchan <- NewDecryptedCipher(b).Decrypt(item, entry)
 				}
-
 			}
 		}(chunk, folder, entry, fid)
 	}
@@ -221,8 +223,10 @@ func credentialMode(secrets map[string][]byte) (useApiKeys, ready bool) {
 	return hasApiKeys, hasApiKeys || hasUserAuth
 }
 
-// Setup the Bitwarden client
-func (b *Bwv) Setup() *Bwv {
+// Setup the Bitwarden client. It returns an error rather than exiting so the
+// caller decides how to react - the server treats any Setup failure as fatal
+// (systemd restarts it), but this keeps the login path testable.
+func (b *Bwv) Setup() (*Bwv, error) {
 	var (
 		err     error
 		secrets map[string][]byte = config.GetSecrets(false)
@@ -233,31 +237,30 @@ func (b *Bwv) Setup() *Bwv {
 	if !ready {
 		// Exit fast with no network traffic; systemd will restart us and we
 		// pick the credentials up as soon as the store unlocks.
-		log.Fatal("credential store not ready: no Bitwarden credentials available yet")
+		return nil, fmt.Errorf("credential store not ready: no Bitwarden credentials available yet")
 	}
 
 	if useApiKeys {
 		log.Println("Setting up Bitwarden client using API key login")
 		if b.lr, err = b.ApiLogin(secrets); err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 	} else {
 		if hashed, err = b.prelogin(secrets["BW_PASSWORD"], secrets["BW_EMAIL"]); err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		if b.lr, err = b.UserLogin(hashed, string(secrets["BW_EMAIL"])); err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 	}
 
 	var (
-		auth           chan bool = make(chan bool)
-		done           chan bool = make(chan bool)
-		pauseReconcile chan bool = make(chan bool)
+		auth chan bool = make(chan bool)
+		done chan bool = make(chan bool)
 	)
-	go b.reconcile(pauseReconcile, auth, false)
-	go b.refresh(auth, done, pauseReconcile, true)
+	go b.reconcile(auth)
+	go b.refresh(auth, done, true)
 	auth <- true
 
 	// Wait for the first sync to complete before continuing
@@ -277,50 +280,40 @@ func (b *Bwv) Setup() *Bwv {
 			mpw      []byte
 		)
 		if mpw, err = cache.MasterPassword(); err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		key, mac, err = crypto.DeriveStretchedMasterKey(mpw, salt, b.lr.KDFInfo)
-		if err != nil {
-			log.Fatal(err)
-		}
 		memguard.ScrambleBytes(mpw)
-
-		b.Secrets.Data.Session, err = crypto.EncryptWith([]byte(hashed), types.AesCbc256_HmacSha256_B64, key, mac)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
+		}
+
+		if b.Secrets.Data.Session, err = crypto.EncryptWith([]byte(hashed), types.AesCbc256_HmacSha256_B64, key, mac); err != nil {
+			return nil, err
 		}
 	}
 
-	return b
+	return b, nil
 }
 
-func (b *Bwv) reconcile(pause, auth chan bool, paused bool) {
+func (b *Bwv) reconcile(auth chan bool) {
 	for {
-		select {
-		case <-pause:
-			// The reconciliation loop needs to be blocked during
-			// the re-authentication process to avoid it conflicting,
-			// competing for the cache or multiple requests being
-			// sent to the server for the same thing
-			paused = !paused
-			log.Println("Reconciliation", paused)
-		case <-time.After(RECONCILE * time.Minute):
-			if paused {
-				continue
-			}
+		<-time.After(RECONCILE)
+		if b.reconcilePaused.Load() {
+			continue
+		}
 
-			log.Println("Syncing...")
-			if err := b.Sync(); err != nil {
-				log.Println(err)
-				// In rare occurrences, the bitwarden servers may be
-				// unavailable during the re-auth process. If this
-				// happens, the re-auth process should sleep for the
-				// next hour and try again whilst this process runs
-				// more frequently
-				if errors.Is(err, transport.ErrUnauthorized{}) {
-					auth <- true
-				}
+		log.Println("Syncing...")
+		if err := b.Sync(); err != nil {
+			log.Println(err)
+			// In rare occurrences, the bitwarden servers may be
+			// unavailable during the re-auth process. If this
+			// happens, the re-auth process should sleep for the
+			// next hour and try again whilst this process runs
+			// more frequently
+			if errors.Is(err, transport.ErrUnauthorized{}) {
+				auth <- true
 			}
 		}
 	}
@@ -334,7 +327,7 @@ func (b *Bwv) reconcile(pause, auth chan bool, paused bool) {
 // The active channel is used to signal that the token should be refreshed
 // immediately and when triggered, will re-authenticate to the Bitwarden server
 // to update the Access token and sync the local cache.
-func (b *Bwv) refresh(auth, done, pauseReconcile chan bool, firstRun bool) {
+func (b *Bwv) refresh(auth, done chan bool, firstRun bool) {
 	for {
 		select {
 		// Refresh the token 5 seconds before it expires to give the client
@@ -342,46 +335,13 @@ func (b *Bwv) refresh(auth, done, pauseReconcile chan bool, firstRun bool) {
 		case <-time.After(time.Duration(b.lr.ExpiresIn-5) * time.Second):
 			go func() { auth <- true }()
 		case <-auth:
-			pauseReconcile <- true
+			b.reconcilePaused.Store(true)
 			if b.Secrets.Data != nil {
-				var (
-					apiLogin bool = b.Secrets.Data.Session.IsZero()
-					lr       *types.LoginResponse
-					err      error
-				)
-
-				if apiLogin {
-					log.Println("Refreshing API token...")
-					if lr, err = b.ApiLogin(config.GetSecrets(false)); err != nil {
-						log.Println("Could not refresh API token")
-						continue
-					}
-				} else {
-					log.Println("Refreshing user token...")
-					var (
-						salt   = b.salt()
-						k, m   []byte
-						hashed []byte
-						err    error
-						kdf    = b.lr.KDFInfo
-						mpw    []byte
-					)
-					if mpw, err = cache.MasterPassword(); err != nil {
-						log.Fatal(err)
-					}
-
-					k, m, _ = crypto.DeriveStretchedMasterKey(mpw, salt, kdf)
-					if hashed, err = crypto.DecryptWith(b.Secrets.Data.Session, k, m); err != nil {
-						log.Println("Could not decrypt session token", err)
-						continue
-					}
-					memguard.ScrambleBytes(mpw)
-
-					var email string = b.Secrets.Data.Sync.Profile.Email
-					if lr, err = b.UserLogin(string(hashed), email); err != nil {
-						log.Println("Could not refresh user token", err)
-						continue
-					}
+				lr, err := b.reauth()
+				if err != nil {
+					log.Println(err)
+					b.reconcilePaused.Store(false)
+					continue
 				}
 				b.lr = lr
 			}
@@ -397,7 +357,7 @@ func (b *Bwv) refresh(auth, done, pauseReconcile chan bool, firstRun bool) {
 				firstRun = false
 				done <- true
 			}
-			pauseReconcile <- true
+			b.reconcilePaused.Store(false)
 
 			// Call the autoloader if it has been set
 			if b.autoload != nil {
@@ -407,34 +367,49 @@ func (b *Bwv) refresh(auth, done, pauseReconcile chan bool, firstRun bool) {
 	}
 }
 
-// chunkSplitFolders splits the number of folders contained in the vault into
-// smaller chunks to allow for parallel processing.
-func (b *Bwv) chunkSplitFolders(slice []types.Folder, size int) [][]types.Folder {
-	var chunks [][]types.Folder
-
-	for {
-		if len(slice) == 0 {
-			break
+// reauth re-authenticates using whichever credential path applies and returns a
+// fresh login response. It never calls log.Fatal: a transient failure (e.g. a
+// briefly locked credential store an hour into running) must not take the whole
+// long-running service down - the caller logs it and retries next cycle.
+func (b *Bwv) reauth() (*types.LoginResponse, error) {
+	if b.Secrets.Data.Session.IsZero() {
+		log.Println("Refreshing API token...")
+		lr, err := b.ApiLogin(config.GetSecrets(false))
+		if err != nil {
+			return nil, fmt.Errorf("could not refresh API token: %w", err)
 		}
-		if len(slice) <= size {
-			size = len(slice)
-		}
-		chunks = append(chunks, slice[0:size])
-		slice = slice[size:]
+		return lr, nil
 	}
-	return chunks
+
+	log.Println("Refreshing user token...")
+	mpw, err := cache.MasterPassword()
+	if err != nil {
+		return nil, fmt.Errorf("could not read master password: %w", err)
+	}
+
+	k, m, err := crypto.DeriveStretchedMasterKey(mpw, b.salt(), b.lr.KDFInfo)
+	memguard.ScrambleBytes(mpw)
+	if err != nil {
+		return nil, fmt.Errorf("could not derive session key: %w", err)
+	}
+
+	hashed, err := crypto.DecryptWith(b.Secrets.Data.Session, k, m)
+	if err != nil {
+		return nil, fmt.Errorf("could not decrypt session token: %w", err)
+	}
+
+	lr, err := b.UserLogin(string(hashed), b.Secrets.Data.Sync.Profile.Email)
+	if err != nil {
+		return nil, fmt.Errorf("could not refresh user token: %w", err)
+	}
+	return lr, nil
 }
 
-// chunkSplitCiphers splits the number of ciphers contained in the vault into
-// smaller chunks to allow for parallel processing.
-func (b *Bwv) chunkSplitCiphers(slice []types.Secret, size int) [][]types.Secret {
-	var chunks [][]types.Secret
-
-	log.Println("Splitting", len(slice), "ciphers into chunks of", size)
-	for {
-		if len(slice) == 0 {
-			break
-		}
+// chunk splits a slice into sub-slices of at most size elements for parallel
+// processing.
+func chunk[T any](slice []T, size int) [][]T {
+	var chunks [][]T
+	for len(slice) > 0 {
 		if len(slice) < size {
 			size = len(slice)
 		}
@@ -446,7 +421,7 @@ func (b *Bwv) chunkSplitCiphers(slice []types.Secret, size int) [][]types.Secret
 
 // GetFolder returns the uuid of the folder that matches the path
 func (b *Bwv) getFolder(path string) uuid.UUID {
-	var folders [][]types.Folder = b.chunkSplitFolders(b.Secrets.Data.Sync.Folders, CHUNKSIZE)
+	var folders [][]types.Folder = chunk(b.Secrets.Data.Sync.Folders, CHUNKSIZE)
 	var uuidchan = make(chan uuid.UUID, 1)
 
 	var wg sync.WaitGroup

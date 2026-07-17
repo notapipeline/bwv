@@ -499,7 +499,9 @@ func TestGetPath(t *testing.T) {
 			server := NewHttpServer(cnf)
 
 			if test.mocks != nil {
-				server.Bwv.Setup()
+				if _, err := server.Bwv.Setup(); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			// Create a new request

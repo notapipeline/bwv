@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -51,7 +52,7 @@ func NewHttpServer(config *config.Config) *HttpServer {
 }
 
 // writeResponseError writes an error response to the client
-func (s *HttpServer) writeResponseError(w *http.ResponseWriter, message string, code int, err error) {
+func (s *HttpServer) writeResponseError(w http.ResponseWriter, message string, code int, err error) {
 	var msg string = fmt.Sprintf("error: %d : %q", code, message)
 	if s.config.Server.Debug {
 		debug.PrintStack()
@@ -62,9 +63,6 @@ func (s *HttpServer) writeResponseError(w *http.ResponseWriter, message string, 
 	}
 
 	log.Println(msg)
-	// There has to be a cleaner way of managing this...
-	message = strings.ReplaceAll(message, `"`, ``)
-	message = strings.ReplaceAll(message, `\`, ``)
 	var b []byte
 	if b, err = json.Marshal(map[string]string{
 		"message": message,
@@ -72,8 +70,8 @@ func (s *HttpServer) writeResponseError(w *http.ResponseWriter, message string, 
 		log.Println(err)
 	}
 
-	(*w).WriteHeader(code)
-	fmt.Fprint(*w, string(b))
+	w.WriteHeader(code)
+	fmt.Fprint(w, string(b))
 }
 
 // IsSecure returns true if the server is configured to use TLS
@@ -138,6 +136,81 @@ func (s *HttpServer) parseAttachments(c DecryptedCipher, attachments []string) (
 	return
 }
 
+// shapeResponse builds the response payload for the ciphers matching a path.
+//
+//   - Nothing requested: the full cipher(s) are returned as an array.
+//   - fields/properties/attachments requested, one cipher: the flat value map
+//     (or {"value": x} when a single value was requested).
+//   - the same, multiple ciphers: a map keyed by cipher id, each value shaped as
+//     the single-cipher case, so nothing is silently dropped.
+func (s *HttpServer) shapeResponse(ciphers []DecryptedCipher, params map[string][]string) interface{} {
+	var requested bool
+	for _, k := range []string{"fields", "properties", "attachments"} {
+		if v, ok := params[k]; ok && len(v) > 0 {
+			requested = true
+			break
+		}
+	}
+
+	if !requested {
+		return ciphers
+	}
+
+	if len(ciphers) == 1 {
+		values, n := s.collectRequested(ciphers[0], params)
+		if n == 0 {
+			// Asked for something absent on the only match: fall back to
+			// returning the full cipher rather than an empty object.
+			return ciphers
+		}
+		return collapse(values, n)
+	}
+
+	shaped := make(map[string]interface{}, len(ciphers))
+	for _, c := range ciphers {
+		values, n := s.collectRequested(c, params)
+		shaped[c.ID.String()] = collapse(values, n)
+	}
+	return shaped
+}
+
+// collectRequested gathers the requested fields, properties and attachments for
+// a single cipher. n is the number of values collected (matching the previous
+// responseLen semantics, so collisions between the three are counted once each).
+func (s *HttpServer) collectRequested(c DecryptedCipher, params map[string][]string) (values map[string]interface{}, n int) {
+	values = make(map[string]interface{})
+	if fields, ok := params["fields"]; ok && len(fields) > 0 {
+		for k, v := range s.parseFields(c, fields) {
+			values[k] = v
+			n++
+		}
+	}
+	if properties, ok := params["properties"]; ok && len(properties) > 0 {
+		for k, v := range s.parseProperties(c, properties) {
+			values[k] = v
+			n++
+		}
+	}
+	if attachments, ok := params["attachments"]; ok && len(attachments) > 0 {
+		for k, v := range s.parseAttachments(c, attachments) {
+			values[k] = v
+			n++
+		}
+	}
+	return values, n
+}
+
+// collapse renders a single value as {"value": x} and anything else as the map
+// itself, preserving the original single-cipher response shape.
+func collapse(values map[string]interface{}, n int) interface{} {
+	if n == 1 {
+		for _, v := range values {
+			return map[string]interface{}{"value": v}
+		}
+	}
+	return values
+}
+
 // checkWhiteList returns true if the given address is in the whitelist
 func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 	if tools.IsMachineNetwork(addr) {
@@ -171,19 +244,19 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	)
 
 	if addr == "" {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, nil)
+		s.writeResponseError(w, "bwv denied the request", http.StatusBadRequest, nil)
 		return false
 	}
 
 	if !s.checkWhiteList(w, addr) {
 		err = fmt.Errorf("address %s not in whitelist", addr)
-		s.writeResponseError(&w, "bwv denied the request", http.StatusForbidden, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusForbidden, err)
 		return false
 	}
 
 	if len(auth) != 2 || auth[0] != "Bearer" || auth[1] == "" {
 		err = fmt.Errorf("invalid authorization header %+v", auth)
-		s.writeResponseError(&w, "bwv denied the request", http.StatusUnauthorized, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusUnauthorized, err)
 		return false
 	}
 
@@ -194,7 +267,7 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	} else {
 		k, m, _ := cache.MasterPasswordKeyMac()
 		if token, err = crypto.DecryptWith(handshakeToken, k, m); err != nil {
-			s.writeResponseError(&w, "bwv denied the request", http.StatusForbidden, err)
+			s.writeResponseError(w, "bwv denied the request", http.StatusForbidden, err)
 			return false
 		}
 	}
@@ -207,13 +280,13 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	log.Println("Checking API key for", addr)
 	if !s.config.CheckApiKey(addr, token) {
 		if handshakeToken, err = s.Bwv.Secrets.Encrypt(token); err != nil {
-			s.writeResponseError(&w, "bwv denied the request", http.StatusUnauthorized, err)
+			s.writeResponseError(w, "bwv denied the request", http.StatusUnauthorized, err)
 			return false
 		}
 
 		log.Println("checking against whitelist encrypted tokens")
 		if !s.config.CheckApiKey(addr, handshakeToken.Bytes()) {
-			s.writeResponseError(&w, "bwv denied the request", http.StatusUnauthorized, err)
+			s.writeResponseError(w, "bwv denied the request", http.StatusUnauthorized, err)
 			return false
 		}
 	}
@@ -224,18 +297,16 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 // getPath returns the requested path from the cache
 func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		s.writeResponseError(&w, "bwv denied the request - invalid method", http.StatusMethodNotAllowed, nil)
+		s.writeResponseError(w, "bwv denied the request - invalid method", http.StatusMethodNotAllowed, nil)
 		return
 	}
 
 	var (
-		addr                                          string = strings.Split(r.RemoteAddr, ":")[0]
-		path                                          string = strings.TrimLeft(r.URL.Path, "/")
-		secret                                        interface{}
-		ok                                            bool
-		values                                        map[string]interface{} = make(map[string]interface{})
-		fieldValues, propertyValues, attachmentValues map[string]interface{}
-		params                                        map[string][]string = make(map[string][]string)
+		addr    string              = strings.Split(r.RemoteAddr, ":")[0]
+		path    string              = strings.TrimLeft(r.URL.Path, "/")
+		ciphers []DecryptedCipher
+		ok      bool
+		params  map[string][]string = make(map[string][]string)
 	)
 
 	var urlValues url.Values = r.URL.Query()
@@ -248,58 +319,13 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[GET] %s %+v from %s\n", path, r.URL.Query(), addr)
-	if secret, ok = s.Bwv.Get(path); !ok {
-		s.writeResponseError(&w, fmt.Sprintf("Path '%s' not found", path), http.StatusNotFound, nil)
+	if ciphers, ok = s.Bwv.Get(path); !ok {
+		s.writeResponseError(w, fmt.Sprintf("Path '%s' not found", path), http.StatusNotFound, nil)
 		return
 	}
 
-	// TODO: Currently these only accept the first cipher in the array
-	//       It would be better if this iterated over the list of ciphers
-	//       and returned the requested fields for each cipher - if there is only
-	//       one cipher then it should return the fields for that cipher or
-	//       `value: <value>` if there is only one field on one cipher requested.
-	var responseLen = 0
-	log.Printf("checking for requested fields")
-	if fields, ok := params["fields"]; ok && len(fields) > 0 {
-		fieldValues = s.parseFields(secret.([]DecryptedCipher)[0], fields)
-		for k, v := range fieldValues {
-			values[k] = v
-			responseLen++
-		}
-	}
-
-	log.Printf("checking for requested properties")
-	if properties, ok := params["properties"]; ok && len(properties) > 0 {
-		propertyValues = s.parseProperties(secret.([]DecryptedCipher)[0], properties)
-		for k, v := range propertyValues {
-			values[k] = v
-			responseLen++
-		}
-	}
-
-	log.Printf("checking for requested attachments")
-	if attachments, ok := params["attachments"]; ok && len(attachments) > 0 {
-		attachmentValues = s.parseAttachments(secret.([]DecryptedCipher)[0], attachments)
-		for k, v := range attachmentValues {
-			values[k] = v
-			responseLen++
-		}
-	}
-
-	switch responseLen {
-	case 0:
-	case 1:
-		for k := range values {
-			secret = map[string]interface{}{
-				"value": values[k],
-			}
-		}
-	default:
-		secret = values
-	}
-
 	var secretResponse types.SecretResponse = types.SecretResponse{
-		Message: secret,
+		Message: s.shapeResponse(ciphers, params),
 	}
 
 	var (
@@ -307,7 +333,7 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 		err error
 	)
 	if b, err = json.Marshal(secretResponse); err != nil {
-		s.writeResponseError(&w, fmt.Sprintf("error: %q", err), http.StatusInternalServerError, err)
+		s.writeResponseError(w, fmt.Sprintf("error: %q", err), http.StatusInternalServerError, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -317,7 +343,7 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 // revokeToken revokes a token sent via POST in the Authorization header
 func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusMethodNotAllowed, nil)
+		s.writeResponseError(w, "bwv denied the request", http.StatusMethodNotAllowed, nil)
 		return
 	}
 
@@ -331,12 +357,12 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err = json.NewDecoder(r.Body).Decode(&addresses); err != nil {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
 	if len(addresses) == 0 {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusBadRequest, err)
 		return
 	}
 
@@ -363,7 +389,7 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 
 	var b []byte
 	if b, err = json.Marshal(response); err != nil {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -377,7 +403,7 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 	log.Println(r.Method, r.URL.Path)
 	if r.Method != "POST" {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusMethodNotAllowed, nil)
+		s.writeResponseError(w, "bwv denied the request", http.StatusMethodNotAllowed, nil)
 		return
 	}
 
@@ -393,12 +419,12 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = json.NewDecoder(r.Body).Decode(&addresses); err != nil {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
 	if len(addresses) == 0 {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusBadRequest, err)
 		return
 	}
 
@@ -407,13 +433,13 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 	for _, a := range addresses {
 		token = s.Bwv.CreateToken()
 		if encryptedToken, err = s.Bwv.Secrets.Encrypt([]byte(token)); err != nil {
-			s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
+			s.writeResponseError(w, "bwv denied the request", http.StatusInternalServerError, err)
 			return
 		}
 
 		log.Println("token generated - storing token")
 		if err = s.config.SetApiKey(a, encryptedToken); err != nil {
-			s.writeResponseError(&w, "bwv denied the request", http.StatusBadRequest, err)
+			s.writeResponseError(w, "bwv denied the request", http.StatusBadRequest, err)
 			return
 		}
 
@@ -426,7 +452,7 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 
 	var b []byte
 	if b, err = json.Marshal(response); err != nil {
-		s.writeResponseError(&w, "bwv denied the request", http.StatusInternalServerError, err)
+		s.writeResponseError(w, "bwv denied the request", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -438,7 +464,7 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 func (s *HttpServer) reload(w http.ResponseWriter, r *http.Request) {
 	if err := s.config.Load(config.ConfigModeServer); err != nil {
 		log.Printf("error: invalid config file %q", err)
-		s.writeResponseError(&w, "an internal server error has occurred - please try again later", http.StatusInternalServerError, err)
+		s.writeResponseError(w, "an internal server error has occurred - please try again later", http.StatusInternalServerError, err)
 		return
 	}
 
@@ -456,7 +482,7 @@ func (s *HttpServer) kdf(w http.ResponseWriter, r *http.Request) {
 	)
 	log.Println("returning kdf info to", r.RemoteAddr)
 	if kdf, err = json.Marshal(s.Bwv.Secrets.KDF); err != nil {
-		s.writeResponseError(&w, fmt.Sprintf("error: %q", err), http.StatusInternalServerError, err)
+		s.writeResponseError(w, fmt.Sprintf("error: %q", err), http.StatusInternalServerError, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -471,7 +497,11 @@ func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bo
 		server   *http.ServeMux
 	)
 
-	if _, err = os.Stat("/tmp/bwv-compromised"); err == nil {
+	var runtimeDir string = os.Getenv("XDG_RUNTIME_DIR")
+	if runtimeDir == "" {
+		runtimeDir = os.TempDir()
+	}
+	if _, err = os.Stat(filepath.Join(runtimeDir, "bwv-compromised")); err == nil {
 		log.Println("-----------------------------------------------------------------------------------------------")
 		log.Println("[FATAL] Possible compromise detected")
 		log.Println("        The server has detected a possible compromise of the master password or client secret")
@@ -506,7 +536,9 @@ func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bo
 		s.Bwv.autoload = autoload
 	}
 
-	s.Bwv.Setup()
+	if _, err = s.Bwv.Setup(); err != nil {
+		log.Fatal(err)
+	}
 	if s.config.IsSecure() {
 		log.Printf("Listening for secure connections on :%d (whitelist %+v)\n", port, s.config.Whitelist())
 		err = http.ServeTLS(listener, server, s.config.Server.Cert, s.config.Server.Key)
