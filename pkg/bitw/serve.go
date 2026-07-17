@@ -515,7 +515,9 @@ func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bo
 		log.Fatalf("Invalid config file: %q", err)
 	}
 
-	s.config.MergeServerConfig(cmdConfig)
+	if err = s.config.MergeServerConfig(cmdConfig); err != nil {
+		log.Fatalf("could not merge server config: %q", err)
+	}
 	if s.config.Server.Port != 0 {
 		port = s.config.Server.Port
 	}
