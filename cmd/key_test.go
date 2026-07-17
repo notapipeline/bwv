@@ -96,6 +96,16 @@ func TestGenkeyCmd(t *testing.T) {
 			Execute()
 			_ = w.Close()
 
+			// gen must POST the store-token endpoint with exactly the requested
+			// addresses - no empty-string padding from a mis-sized slice.
+			mock := transport.DefaultHttpClient.(*transport.MockHttpClient)
+			if !strings.HasSuffix(mock.LastPostURL, "/api/v1/storetoken") {
+				t.Errorf("gen posted to %q, want suffix /api/v1/storetoken", mock.LastPostURL)
+			}
+			if got, ok := mock.LastPostBody.([]string); !ok || len(got) != 1 || got[0] != "192.168.0.1" {
+				t.Errorf("gen sent addresses %#v, want [192.168.0.1]", mock.LastPostBody)
+			}
+
 			var stdoutbuf strings.Builder
 			_, err = io.Copy(&stdoutbuf, r)
 			if err != nil {
@@ -184,6 +194,12 @@ func TestRevokeCmd(t *testing.T) {
 			}
 
 			Execute()
+
+			// revoke must hit the revoke endpoint, not store-token.
+			mock := transport.DefaultHttpClient.(*transport.MockHttpClient)
+			if !strings.HasSuffix(mock.LastPostURL, "/api/v1/revoketoken") {
+				t.Errorf("revoke posted to %q, want suffix /api/v1/revoketoken", mock.LastPostURL)
+			}
 			var actual = strings.TrimSpace(buf.String())
 			if test.expectedErr != nil {
 				var expected = strings.TrimSpace(test.expectedErr.Error())

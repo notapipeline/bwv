@@ -35,6 +35,12 @@ type MockHttpResponse struct {
 // Useful for testing requests throughout the application
 type MockHttpClient struct {
 	Responses []MockHttpResponse
+
+	// LastPostURL and LastPostBody record the most recent Post so tests can
+	// assert the endpoint and payload actually sent (the mock returns queued
+	// responses regardless, so without this a wrong URL/body goes unnoticed).
+	LastPostURL  string
+	LastPostBody any
 }
 
 func (m *MockHttpClient) Get(ctx context.Context, urlstr string, recv any) error {
@@ -42,6 +48,8 @@ func (m *MockHttpClient) Get(ctx context.Context, urlstr string, recv any) error
 }
 
 func (m *MockHttpClient) Post(ctx context.Context, urlstr string, recv, send any) error {
+	m.LastPostURL = urlstr
+	m.LastPostBody = send
 	return m.DoWithBackoff(ctx, nil, recv)
 }
 

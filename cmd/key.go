@@ -81,7 +81,7 @@ var genkeyCmd = &cobra.Command{
 			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		}
 
-		adrs := make([]string, len(addresses))
+		adrs := make([]string, 0, len(addresses))
 		for _, address := range addresses {
 			adrs = append(adrs, address.String())
 		}
@@ -119,9 +119,9 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		}
 
-		err = transport.DefaultHttpClient.Post(ctx, localAddress+"/api/v1/storetoken", &response, addresses)
+		err = transport.DefaultHttpClient.Post(ctx, localAddress+"/api/v1/revoketoken", &response, addresses)
 		if err != nil {
-			fatal("unable to store token: %q", err)
+			fatal("unable to revoke token: %q", err)
 			return
 		}
 

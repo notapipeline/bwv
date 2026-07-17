@@ -271,8 +271,14 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 
+	// storetoken/revoketoken are admin operations authenticated by the master
+	// password (the token above was encrypted with it and decrypted here), not
+	// by an API key - the first key can't exist yet when storing, and the
+	// decrypted token never matches a stored key. Note the full registered path,
+	// not "/storetoken": the mismatch here previously made `key gen`/`key revoke`
+	// fall through to the API-key check and 401.
 	switch r.URL.Path {
-	case "/storetoken":
+	case "/api/v1/storetoken", "/api/v1/revoketoken":
 		return true
 	}
 

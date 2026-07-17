@@ -264,8 +264,9 @@ func TestStoreToken(t *testing.T) {
 				t.Errorf("Expected nil error but got %v when unlocking", err)
 			}
 
-			// Create a new request
-			req, err := http.NewRequest(test.method, "/storetoken", nil)
+			// Create a new request - use the real registered route so the
+			// validate() bypass path matches production.
+			req, err := http.NewRequest(test.method, "/api/v1/storetoken", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
