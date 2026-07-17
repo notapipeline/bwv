@@ -96,8 +96,35 @@ func (b *Bwv) SetRegion(region Location) {
 	b.Endpoint = b.servers[region]
 }
 
+// matchCipher returns the decrypted cipher when item matches the folder/entry
+// selector, or nil when it doesn't (or its name cannot be decrypted). folder is
+// "*" for any folder, "." for the vault root, or a resolved folder id in fid;
+// entry is "*" for any name or an exact cipher name / id.
+func (b *Bwv) matchCipher(item types.Secret, folder, entry string, fid uuid.UUID) *DecryptedCipher {
+	matchesFolder := folder == "*" ||
+		(folder == "." && item.FolderID == nil) ||
+		(item.FolderID != nil && *item.FolderID == fid)
+
+	if !matchesFolder {
+		if item.ID.String() == entry {
+			return NewDecryptedCipher(b).Decrypt(item, entry)
+		}
+		return nil
+	}
+
+	name, err := b.Secrets.DecryptCipherStr(item.Name, item.Key)
+	if err != nil {
+		log.Printf("[ERROR] cannot decrypt name for cipher id=%s: %v", item.ID, err)
+		return nil
+	}
+	if name == entry || entry == "*" {
+		return NewDecryptedCipher(b).Decrypt(item, name)
+	}
+	return nil
+}
+
 // Get returns a slice of DecryptedCipher objects that match the path
-func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) { //nolint:gocognit // TODO: decompose the per-chunk match/decrypt goroutine (cognitive complexity 25)
+func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 	var (
 		entry         = filepath.Base(path)
 		folder        = filepath.Dir(path)
@@ -116,27 +143,14 @@ func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) { //nolint:gocognit // 
 	var wg sync.WaitGroup
 	for _, chunk := range ciphers {
 		wg.Add(1)
-		go func(mychunk []types.Secret, folder, entry string, fid uuid.UUID) {
+		go func(mychunk []types.Secret) {
 			defer wg.Done()
 			for _, item := range mychunk {
-				matchesFolder := folder == "*" ||
-					(folder == "." && item.FolderID == nil) ||
-					(item.FolderID != nil && *item.FolderID == fid)
-
-				if matchesFolder {
-					name, err := b.Secrets.DecryptCipherStr(item.Name, item.Key)
-					if err != nil {
-						log.Printf("[ERROR] cannot decrypt name for cipher id=%s: %v", item.ID, err)
-						continue
-					}
-					if name == entry || entry == "*" {
-						decryptedchan <- NewDecryptedCipher(b).Decrypt(item, name)
-					}
-				} else if item.ID.String() == entry {
-					decryptedchan <- NewDecryptedCipher(b).Decrypt(item, entry)
+				if dc := b.matchCipher(item, folder, entry, fid); dc != nil {
+					decryptedchan <- dc
 				}
 			}
-		}(chunk, folder, entry, fid)
+		}(chunk)
 	}
 
 	go func() {
