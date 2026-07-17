@@ -131,7 +131,7 @@ func TestRootCmd(t *testing.T) {
 				fatal = of
 				log.SetFlags(log.Flags() & (log.Ldate | log.Ltime))
 			}()
-			fatal = func(format string, v ...interface{}) {
+			fatal = func(format string, v ...any) {
 				log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 				log.Printf(format, v...)
 			}

@@ -39,7 +39,7 @@ func TestShapeResponse(t *testing.T) {
 
 	t.Run("single cipher single value collapses to value", func(t *testing.T) {
 		got := s.shapeResponse([]DecryptedCipher{c1}, map[string][]string{"fields": {"example"}})
-		want := map[string]interface{}{"value": "v1"}
+		want := map[string]any{"value": "v1"}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %#v, want %#v", got, want)
 		}
@@ -47,7 +47,7 @@ func TestShapeResponse(t *testing.T) {
 
 	t.Run("single cipher multiple values returns flat map", func(t *testing.T) {
 		got := s.shapeResponse([]DecryptedCipher{c1}, map[string][]string{"fields": {"example"}, "properties": {"username"}})
-		want := map[string]interface{}{"example": "v1", "username": "user1"}
+		want := map[string]any{"example": "v1", "username": "user1"}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %#v, want %#v", got, want)
 		}
@@ -55,9 +55,9 @@ func TestShapeResponse(t *testing.T) {
 
 	t.Run("multiple ciphers key by id and drop nothing", func(t *testing.T) {
 		got := s.shapeResponse([]DecryptedCipher{c1, c2}, map[string][]string{"fields": {"example"}})
-		want := map[string]interface{}{
-			id1.String(): map[string]interface{}{"value": "v1"},
-			id2.String(): map[string]interface{}{"value": "v2"},
+		want := map[string]any{
+			id1.String(): map[string]any{"value": "v1"},
+			id2.String(): map[string]any{"value": "v2"},
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("got %#v, want %#v", got, want)

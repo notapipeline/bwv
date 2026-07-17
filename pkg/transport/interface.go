@@ -22,9 +22,9 @@ import (
 )
 
 type HttpClient interface {
-	Post(ctx context.Context, urlstr string, recv, send interface{}) error
-	Get(ctx context.Context, urlstr string, recv interface{}) error
-	DoWithBackoff(ctx context.Context, req *http.Request, recv interface{}) error
+	Post(ctx context.Context, urlstr string, recv, send any) error
+	Get(ctx context.Context, urlstr string, recv any) error
+	DoWithBackoff(ctx context.Context, req *http.Request, recv any) error
 }
 
 type client struct {

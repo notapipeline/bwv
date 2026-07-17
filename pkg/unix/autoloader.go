@@ -234,7 +234,7 @@ func (a *Autoloader) addSSHKey(key, passphrase []byte, filename string) error {
 		conn   net.Conn
 		err    error
 		client agent.ExtendedAgent
-		sshKey interface{}
+		sshKey any
 	)
 
 	if passphrase != nil {

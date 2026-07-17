@@ -94,13 +94,13 @@ func unique(what []string) (unique []string) {
 }
 
 // parseFields returns a map of field values for the given cipher
-func (s *HttpServer) parseFields(c DecryptedCipher, fields []string) (values map[string]interface{}) {
+func (s *HttpServer) parseFields(c DecryptedCipher, fields []string) (values map[string]any) {
 	var ok bool
 	fields = unique(fields)
-	values = make(map[string]interface{})
+	values = make(map[string]any)
 
 	for _, f := range fields {
-		var v interface{}
+		var v any
 		if v, ok = c.Fields[f]; ok && v != "" {
 			values[f] = v
 		}
@@ -109,12 +109,12 @@ func (s *HttpServer) parseFields(c DecryptedCipher, fields []string) (values map
 }
 
 // parseProperties returns a map of property values for the given cipher
-func (s *HttpServer) parseProperties(c DecryptedCipher, properties []string) (values map[string]interface{}) {
+func (s *HttpServer) parseProperties(c DecryptedCipher, properties []string) (values map[string]any) {
 	properties = unique(properties)
-	values = make(map[string]interface{})
+	values = make(map[string]any)
 
 	for _, p := range properties {
-		var v interface{}
+		var v any
 		if v = c.Get(p); v != "" && v != nil {
 			values[p] = v
 		}
@@ -123,12 +123,12 @@ func (s *HttpServer) parseProperties(c DecryptedCipher, properties []string) (va
 }
 
 // parseAttachments returns a map of attachment values for the given cipher
-func (s *HttpServer) parseAttachments(c DecryptedCipher, attachments []string) (values map[string]interface{}) {
+func (s *HttpServer) parseAttachments(c DecryptedCipher, attachments []string) (values map[string]any) {
 	attachments = unique(attachments)
-	values = make(map[string]interface{})
+	values = make(map[string]any)
 
 	for _, a := range attachments {
-		var v interface{}
+		var v any
 		if v = c.Attachments[a]; v != "" {
 			values[a] = v
 		}
@@ -143,7 +143,7 @@ func (s *HttpServer) parseAttachments(c DecryptedCipher, attachments []string) (
 //     (or {"value": x} when a single value was requested).
 //   - the same, multiple ciphers: a map keyed by cipher id, each value shaped as
 //     the single-cipher case, so nothing is silently dropped.
-func (s *HttpServer) shapeResponse(ciphers []DecryptedCipher, params map[string][]string) interface{} {
+func (s *HttpServer) shapeResponse(ciphers []DecryptedCipher, params map[string][]string) any {
 	var requested bool
 	for _, k := range []string{"fields", "properties", "attachments"} {
 		if v, ok := params[k]; ok && len(v) > 0 {
@@ -166,7 +166,7 @@ func (s *HttpServer) shapeResponse(ciphers []DecryptedCipher, params map[string]
 		return collapse(values, n)
 	}
 
-	shaped := make(map[string]interface{}, len(ciphers))
+	shaped := make(map[string]any, len(ciphers))
 	for _, c := range ciphers {
 		values, n := s.collectRequested(c, params)
 		shaped[c.ID.String()] = collapse(values, n)
@@ -177,8 +177,8 @@ func (s *HttpServer) shapeResponse(ciphers []DecryptedCipher, params map[string]
 // collectRequested gathers the requested fields, properties and attachments for
 // a single cipher. n is the number of values collected (matching the previous
 // responseLen semantics, so collisions between the three are counted once each).
-func (s *HttpServer) collectRequested(c DecryptedCipher, params map[string][]string) (values map[string]interface{}, n int) {
-	values = make(map[string]interface{})
+func (s *HttpServer) collectRequested(c DecryptedCipher, params map[string][]string) (values map[string]any, n int) {
+	values = make(map[string]any)
 	if fields, ok := params["fields"]; ok && len(fields) > 0 {
 		for k, v := range s.parseFields(c, fields) {
 			values[k] = v
@@ -202,10 +202,10 @@ func (s *HttpServer) collectRequested(c DecryptedCipher, params map[string][]str
 
 // collapse renders a single value as {"value": x} and anything else as the map
 // itself, preserving the original single-cipher response shape.
-func collapse(values map[string]interface{}, n int) interface{} {
+func collapse(values map[string]any, n int) any {
 	if n == 1 {
 		for _, v := range values {
-			return map[string]interface{}{"value": v}
+			return map[string]any{"value": v}
 		}
 	}
 	return values
@@ -302,8 +302,8 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		addr    string              = strings.Split(r.RemoteAddr, ":")[0]
-		path    string              = strings.TrimLeft(r.URL.Path, "/")
+		addr    string = strings.Split(r.RemoteAddr, ":")[0]
+		path    string = strings.TrimLeft(r.URL.Path, "/")
 		ciphers []DecryptedCipher
 		ok      bool
 		params  map[string][]string = make(map[string][]string)

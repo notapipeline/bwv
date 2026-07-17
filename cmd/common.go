@@ -39,7 +39,7 @@ import (
 
 // fatal is a wrapper around log.Fatalf that will print a stack trace if
 // the debug flag is set
-var fatal func(format string, v ...interface{}) = func(format string, v ...interface{}) {
+var fatal func(format string, v ...any) = func(format string, v ...any) {
 	if clientCmd.Debug {
 		debug.PrintStack()
 	}
@@ -117,7 +117,7 @@ func printTable(r types.SecretResponse) error {
 
 	t.AppendHeader(table.Row{"Key", "Value"})
 	for k, v := range r.Message.(map[string]any) {
-		t.AppendRow([]interface{}{k, v})
+		t.AppendRow([]any{k, v})
 	}
 	t.Render()
 	return nil
@@ -181,10 +181,10 @@ func printSecret(r types.SecretResponse) error {
 	var (
 		ok   bool
 		err  error
-		list []interface{}
+		list []any
 	)
 
-	if list, ok = r.Message.([]interface{}); ok {
+	if list, ok = r.Message.([]any); ok {
 		for _, v := range list {
 			if err = toSecret(v.(map[string]any)); err != nil {
 				return err
@@ -219,7 +219,7 @@ func printJSON(r types.SecretResponse) error {
 		return err
 	}
 
-	var structure interface{}
+	var structure any
 	if err = json.Unmarshal(b, &structure); err != nil {
 		return err
 	}

@@ -32,7 +32,7 @@ func (t *TwoFactorProvider) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func (t TwoFactorProvider) Line(extra map[string]interface{}) string {
+func (t TwoFactorProvider) Line(extra map[string]any) string {
 	switch t {
 	case Authenticator:
 		return "Six-digit authenticator token: "

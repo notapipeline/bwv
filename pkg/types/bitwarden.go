@@ -140,7 +140,7 @@ type UserDecryptionOptions struct {
 }
 
 // MasterPasswordPolicy is the policy used to enforce a master password.
-type MasterPasswordPolicy map[string]interface{}
+type MasterPasswordPolicy map[string]any
 
 // LoginResponse is returned from the login endpoint. (POST /identity/connect/token)
 type LoginResponse struct {
@@ -172,5 +172,5 @@ type DataFile struct {
 
 // SecretResponse is returned between the `bwv` server and client
 type SecretResponse struct {
-	Message interface{} `json:"message" yaml:"message"`
+	Message any `json:"message" yaml:"message"`
 }

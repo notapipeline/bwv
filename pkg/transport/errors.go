@@ -60,8 +60,8 @@ type TwoFactorRequiredError struct {
 	ErrorDescription     string `json:"error_description"`
 	ErrorModel           *ErrorModel
 	TwoFactorProviders   []string
-	TwoFactorProviders2  map[types.TwoFactorProvider]map[string]interface{}
-	MasterPasswordPolicy interface{}
+	TwoFactorProviders2  map[types.TwoFactorProvider]map[string]any
+	MasterPasswordPolicy any
 }
 
 func (e TwoFactorRequiredError) Error() string {

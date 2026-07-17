@@ -60,7 +60,7 @@ func NewDecryptedCipher(b *Bwv) *DecryptedCipher {
 }
 
 // Get returns the value of the given field.
-func (d *DecryptedCipher) Get(what string) (value interface{}) {
+func (d *DecryptedCipher) Get(what string) (value any) {
 	switch strings.ToLower(what) {
 	case "type":
 		return d.Type
