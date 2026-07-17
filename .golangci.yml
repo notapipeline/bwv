@@ -20,9 +20,9 @@ linters:
     - gocyclo
   settings:
     gocyclo:
-      min-complexity: 15
+      min-complexity: 12
     gocognit:
-      min-complexity: 20
+      min-complexity: 18
   exclusions:
     rules:
       - path: _test\.go
