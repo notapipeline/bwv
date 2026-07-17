@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
+	"slices"
 )
 
 func IsMachineNetwork(addr string) bool {
@@ -52,10 +53,8 @@ func IsExternalInterface(iface string) bool {
 // ContainsIp returns true if the given IP is in the given network
 func ContainsIp(netw string, ip string) bool {
 	if hosts := CidrHosts(netw); hosts != nil {
-		for _, host := range hosts {
-			if ip == host {
-				return true
-			}
+		if slices.Contains(hosts, ip) {
+			return true
 		}
 	}
 	return false

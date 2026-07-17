@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 /*
  *   Copyright 2023 Martin Proffitt <mproffitt@choclab.net>
@@ -138,7 +137,7 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 		name      string
 		envPrefix string
 		file      *os.File
-		envData   string
+		envData   strings.Builder
 	)
 	name = regexp.MustCompile(`[^a-zA-Z0-9 ]+`).ReplaceAllString(c.Name, "_")
 	envPrefix = strings.ToUpper(name)
@@ -167,13 +166,13 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 	for _, e := range environment {
 		e = strings.TrimSpace(e)
 		if v := c.Get(e); v != "" {
-			envData += fmt.Sprintf("export %s_%s=%s\n", envPrefix, strings.ToUpper(e), v)
+			envData.WriteString(fmt.Sprintf("export %s_%s=%s\n", envPrefix, strings.ToUpper(e), v))
 		} else if v, ok := c.Fields[e]; ok && v != "" {
-			envData += fmt.Sprintf("export %s_%s=%s\n", envPrefix, strings.ToUpper(e), v)
+			envData.WriteString(fmt.Sprintf("export %s_%s=%s\n", envPrefix, strings.ToUpper(e), v))
 		}
 	}
 
-	if _, err = file.WriteString(envData); err != nil {
+	if _, err = file.WriteString(envData.String()); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("cipher %q : failed to write environment file %q : error was %q", c.Name, name, err)
 	}

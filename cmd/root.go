@@ -58,8 +58,9 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			address     = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 			fields      = "fields=" + strings.Join(vaultItem.Fields, ",")
 			props       = "properties=" + strings.Join(vaultItem.Parameters, ",")
-			attachments = "attachments=" + strings.Join(vaultItem.Attachments, ",")
+			attachments strings.Builder
 		)
+		attachments.WriteString("attachments=" + strings.Join(vaultItem.Attachments, ","))
 
 		if vaultItem.Path == "" {
 			return fmt.Errorf("no path specified")
@@ -70,12 +71,12 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			vaultItem.Path = parts[0]
 			parts = strings.Split(parts[1], "&")
 			for _, p := range parts {
-				if strings.HasPrefix(p, "fields=") {
-					fields += "," + strings.TrimPrefix(p, "fields=")
-				} else if strings.HasPrefix(p, "properties=") {
-					props += "," + strings.TrimPrefix(p, "properties=")
-				} else if strings.HasPrefix(p, "attachments=") {
-					attachments += "," + strings.TrimPrefix(p, "attachments=")
+				if after, ok := strings.CutPrefix(p, "fields="); ok {
+					fields += "," + after
+				} else if after, ok := strings.CutPrefix(p, "properties="); ok {
+					props += "," + after
+				} else if after, ok := strings.CutPrefix(p, "attachments="); ok {
+					attachments.WriteString("," + after)
 				}
 			}
 		}
@@ -84,8 +85,8 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 
 		ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		var getProperties = make([]string, 0)
-		if attachments != "attachments=" {
-			getProperties = append(getProperties, attachments)
+		if attachments.String() != "attachments=" {
+			getProperties = append(getProperties, attachments.String())
 		}
 
 		if fields != "fields=" {

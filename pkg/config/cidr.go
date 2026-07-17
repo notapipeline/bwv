@@ -18,14 +18,13 @@ package config
 import (
 	"encoding/binary"
 	"net"
+	"slices"
 )
 
 func ContainsIp(netw string, ip string) bool {
 	if hosts := CidrHosts(netw); hosts != nil {
-		for _, host := range hosts {
-			if ip == host {
-				return true
-			}
+		if slices.Contains(hosts, ip) {
+			return true
 		}
 	}
 	return false
