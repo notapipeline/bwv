@@ -70,6 +70,18 @@ attributes at the same `/Passwords/bwvault`.
 ## Building
 Clone this repo then run `go build .`
 
+## Developing
+This repo uses [pre-commit](https://pre-commit.com) to run the lint gate
+(`golangci-lint`), tests and `modernize`. After cloning, enable the hooks once:
+
+```
+pre-commit install                       # commit-stage: golangci-lint + go test
+pre-commit install --hook-type pre-push  # push-stage: modernize
+```
+
+The Go hooks call your system `golangci-lint` (v2) and `go` toolchains. Run the
+full suite by hand at any time with `pre-commit run --all-files`.
+
 ## Commands:
 
 > Note:
