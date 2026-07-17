@@ -44,6 +44,9 @@ type DecryptedCipher struct {
 
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Otp is the current TOTP code generated from the login's stored secret, if
+	// it has one - not the secret itself.
+	Otp string `json:"totp,omitempty"`
 
 	// attachments will be sent b64encoded
 	Attachments map[string]string `json:"attachments"`
@@ -78,6 +81,8 @@ func (d *DecryptedCipher) Get(what string) (value any) {
 		return d.Username
 	case "password":
 		return d.Password
+	case "otp", "totp":
+		return d.Otp
 	}
 	return nil
 }
@@ -100,6 +105,15 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 	if c.Login != nil {
 		d.Username, _ = d.bwv.Secrets.DecryptCipherStr(c.Login.Username, c.Key)
 		d.Password, _ = d.bwv.Secrets.DecryptCipherStr(c.Login.Password, c.Key)
+		if !c.Login.Totp.IsZero() {
+			secret, err := d.bwv.Secrets.DecryptCipherStr(c.Login.Totp, c.Key)
+			if err != nil {
+				log.Printf("[ERROR] cannot decrypt TOTP secret for cipher id=%s: %v", c.ID, err)
+			} else if d.Otp, err = totpCode(secret, time.Now()); err != nil {
+				log.Printf("[ERROR] cannot generate TOTP for cipher id=%s: %v", c.ID, err)
+				d.Otp = ""
+			}
+		}
 	}
 
 	var wg sync.WaitGroup
@@ -141,7 +155,7 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 				return
 			}
 
-			if value, _ = d.DecryptUrl(attachment, size, c.Key); err != nil {
+			if value, err = d.DecryptUrl(attachment, size, c.Key); err != nil {
 				log.Println(err)
 				return
 			}

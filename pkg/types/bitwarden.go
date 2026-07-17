@@ -119,7 +119,9 @@ type Login struct {
 	URI      CipherString
 	URIs     []URI
 	Username CipherString `json:",omitempty"`
-	Totp     string       `json:",omitempty"`
+	// Totp is the (encrypted) TOTP secret or otpauth:// URI for the login, not
+	// a plain string - it must be decrypted like any other CipherString.
+	Totp CipherString `json:",omitempty"`
 }
 
 // URI is the URI associated with a login.
