@@ -184,50 +184,65 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 	return
 }
 
-// addCipherKeys adds the attachments from the given cipher to the agents
-func (a *Autoloader) addCipherKeys(autoload string, c *bitw.DecryptedCipher) (errors []error) { //nolint:gocognit // TODO: split attachment decode / ssh / gpg branches (cognitive complexity 24)
-	var attachments map[string]string
-	switch autoload {
-	case "true":
-		attachments = c.Attachments
-	default:
-		attachments = make(map[string]string)
-		var names = strings.Split(autoload, ",")
-		for _, name := range names {
-			if _, ok := c.Attachments[name]; ok {
-				attachments[name] = c.Attachments[name]
-			}
+// selectAttachments returns the attachments to load for a cipher. "true" loads
+// them all; otherwise autoload is a comma-separated list of attachment names.
+func selectAttachments(autoload string, c *bitw.DecryptedCipher) map[string]string {
+	if autoload == "true" {
+		return c.Attachments
+	}
+	selected := make(map[string]string)
+	for _, name := range strings.Split(autoload, ",") {
+		if v, ok := c.Attachments[name]; ok {
+			selected[name] = v
 		}
 	}
+	return selected
+}
+
+// attachmentPassword returns the passphrase for an attachment: a field named
+// after the file, else a generic "password" field, else empty.
+func attachmentPassword(c *bitw.DecryptedCipher, filename string) string {
+	if pw, ok := c.Fields[filename]; ok {
+		return pw
+	}
+	if pw, ok := c.Fields["password"]; ok {
+		return pw
+	}
+	return ""
+}
+
+// addKey loads a single decoded attachment into the appropriate agent based on
+// its filename: SSH keys (contain "id_", not ".pub") into ssh-agent, ".pgp"
+// files into gpg-agent. Anything else is ignored.
+func (a *Autoloader) addKey(key, passphrase []byte, filename string) error {
+	switch {
+	case strings.Contains(filename, "id_") && !strings.HasSuffix(filename, ".pub"):
+		if err := a.addSSHKey(key, passphrase, filename); err != nil {
+			return fmt.Errorf("failed to add key to ssh-agent: %w", err)
+		}
+	case strings.HasSuffix(strings.ToLower(filename), ".pgp"):
+		if err := a.addPGPKey(key, passphrase, filename); err != nil {
+			return fmt.Errorf("failed to add key to gpg-agent: %w", err)
+		}
+	}
+	return nil
+}
+
+// addCipherKeys adds the attachments from the given cipher to the agents
+func (a *Autoloader) addCipherKeys(autoload string, c *bitw.DecryptedCipher) (errors []error) {
+	attachments := selectAttachments(autoload, c)
 
 	log.Printf("cipher %q : loading %d attachments", c.Name, len(attachments))
 	for filename, attachment := range attachments {
-		var (
-			err      error
-			b        []byte
-			password string
-			ok       bool
-		)
-		if b, err = base64.StdEncoding.DecodeString(attachment); err != nil {
+		b, err := base64.StdEncoding.DecodeString(attachment)
+		if err != nil {
 			errors = append(errors, fmt.Errorf("cipher %q : failed to decode attachment %q : error was %q", c.Name, filename, err))
 			continue
 		}
 
-		if password, ok = c.Fields[filename]; !ok {
-			if password, ok = c.Fields["password"]; !ok {
-				password = ""
-			}
-		}
-
 		log.Printf("cipher %q : loading attachment %q", c.Name, filename)
-		if strings.Contains(filename, "id_") && !strings.HasSuffix(filename, ".pub") {
-			if err := a.addSSHKey(b, []byte(password), filename); err != nil {
-				errors = append(errors, fmt.Errorf("failed to add key to ssh-agent: %w", err))
-			}
-		} else if strings.HasSuffix(strings.ToLower(filename), ".pgp") {
-			if err := a.addPGPKey(b, []byte(password), filename); err != nil {
-				errors = append(errors, fmt.Errorf("failed to add key to gpg-agent: %w", err))
-			}
+		if err := a.addKey(b, []byte(attachmentPassword(c, filename)), filename); err != nil {
+			errors = append(errors, err)
 		}
 	}
 	return
