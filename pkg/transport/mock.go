@@ -79,7 +79,6 @@ func (m *MockHttpClient) Do(ctx context.Context, req *http.Request, recv any) er
 		// therefore we're normally passing in a SecretResponse object.
 		if secretResponse, ok := recv.(*types.SecretResponse); ok {
 			secretResponse.Message = base64.StdEncoding.EncodeToString(response.Body)
-			recv = secretResponse //nolint:golint,ineffassign
 			return nil
 		}
 

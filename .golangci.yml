@@ -1,0 +1,16 @@
+# golangci-lint v2 configuration.
+#
+# Holds the codebase at the state cleaned up in the api-rewrite branch:
+# staticcheck (ST1005 error-string style, ST1023 redundant types, etc.),
+# errcheck (all ignores must be explicit), govet, ineffassign and unused.
+# Deliberate error ignores are marked in-code with `_ =` rather than excluded
+# here, so nothing is silently swallowed.
+version: "2"
+
+linters:
+  default: standard
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

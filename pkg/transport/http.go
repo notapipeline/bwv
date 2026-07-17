@@ -217,7 +217,6 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 		// therefore we're normally passing in a SecretResponse object.
 		if secretResponse, ok := recv.(*types.SecretResponse); ok {
 			secretResponse.Message = base64.StdEncoding.EncodeToString(body)
-			recv = secretResponse //nolint:golint,ineffassign
 			return nil
 		}
 
