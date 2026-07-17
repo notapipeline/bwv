@@ -51,6 +51,12 @@ type Secret struct {
 
 	// The rest of the fields are optional. Omit from the JSON if empty.
 
+	// Key, when present, is this cipher's own symmetric key (Bitwarden
+	// "cipher key encryption"), wrapped with the user (or organization) key.
+	// When set, the cipher's other CipherString fields are encrypted with
+	// this key rather than the user key directly.
+	Key *CipherString `json:"key,omitempty"`
+
 	FolderID            *uuid.UUID   `json:",omitempty"`
 	OrganizationID      *uuid.UUID   `json:",omitempty"`
 	Favorite            bool         `json:",omitempty"`

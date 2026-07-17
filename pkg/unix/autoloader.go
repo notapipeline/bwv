@@ -251,6 +251,7 @@ func (a *Autoloader) addSSHKey(key, passphrase []byte, filename string) error {
 		return fmt.Errorf("SSH_AUTH_SOCK not set")
 	}
 
+	log.Printf("adding key %q to ssh-agent via socket %s\n", filename, socket)
 	if conn, err = net.Dial("unix", socket); err != nil {
 		return fmt.Errorf("failed to connect to ssh-agent: %w", err)
 	}
@@ -259,7 +260,7 @@ func (a *Autoloader) addSSHKey(key, passphrase []byte, filename string) error {
 	client = agent.NewClient(conn)
 	if err := client.Add(agent.AddedKey{
 		PrivateKey:       sshKey,
-		Comment:          "bwv aded key" + filename,
+		Comment:          "bwv added key " + filename,
 		LifetimeSecs:     0,
 		ConfirmBeforeUse: false,
 	}); err != nil {

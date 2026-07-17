@@ -31,13 +31,15 @@ import (
 const SYSTEMFILE string = `
 [Unit]
 Description=Bitwarden HTTP API
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Environment="NO_DATELOG=true"
 ExecStart=/usr/bin/bwv serve
 ExecReload=/bin/kill -SIGINT "$MAINPID"
 Restart=always
-RestartSec=10
+RestartSec=2
 
 [Install]
 WantedBy=default.target

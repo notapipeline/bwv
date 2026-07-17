@@ -52,21 +52,17 @@ var genkeyCmd = &cobra.Command{
 	but will not be sent to the server.
 
 	You can generate a new key at any time. If you do, the old key will be
-	discarded and you will need to update any scripts that use the old key.
+	discarded and you will need to update any scripts that use it.
 
 	Each key is associated with a single IP address or CIDR block.
 
 	You can generate a new token per block by specifying multiple blocks on the
 	command line. For example:
 
-	Generate a key for localhost:
-
-		bwv genkey -e test@example.com
-
 	Generate a specific key for system with address 192.168.0.2
 	and a generic key for all hosts on 192.168.0.0/16 network
 
-		bwv genkey -a 192.168.0.2 -a 192.168.0.0/16
+		bwv gen -a 192.168.0.2 -a 192.168.0.0/16
 
 	Specific keys (no block) take precedence over generic keys (block)
 

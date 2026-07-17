@@ -30,27 +30,35 @@ func getSecretFromKWallet(what string) (string, error) {
 		return "", fmt.Errorf("Skipping kwallet")
 	}
 
-	var (
-		err error
-		r   *gokwallet.RecurseOpts = gokwallet.DefaultRecurseOpts
-	)
+	var err error
 
-	r.AllWalletItems = true
 	if wm == nil {
+		// Enumerate wallet and folder NAMES only - do not eagerly read and
+		// decrypt every item in every wallet. AllWalletItems would call
+		// .Update() (a D-Bus read + decrypt) on every password/map/blob in
+		// every folder of every wallet at construction, which is what made
+		// discovery slow. Use a fresh RecurseOpts so we don't mutate the
+		// shared gokwallet.DefaultRecurseOpts.
+		r := &gokwallet.RecurseOpts{Wallets: true, Folders: true}
 		if wm, err = gokwallet.NewWalletManager(r, "BWVault"); err != nil {
 			return "", err
 		}
 	}
 
 	for _, v := range wm.Wallets {
-		if f, ok := v.Folders["Passwords"]; ok {
-			if m, ok := f.Maps["bwdata"]; ok {
-				for k, p := range m.Value {
-					if k == what {
-						return p, nil
-					}
-				}
-			}
+		f, ok := v.Folders["Passwords"]
+		if !ok {
+			continue
+		}
+
+		// Read only the bwdata map, not the whole folder.
+		m, err := gokwallet.NewMap(f, "bwdata", &gokwallet.RecurseOpts{Maps: true})
+		if err != nil || m == nil {
+			continue
+		}
+
+		if p, ok := m.Value[what]; ok {
+			return p, nil
 		}
 	}
 	return "", nil

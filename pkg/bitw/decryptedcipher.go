@@ -98,8 +98,8 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 	d.Attachments = make(map[string]string)
 
 	if c.Login != nil {
-		d.Username, _ = d.bwv.Secrets.DecryptStr(c.Login.Username)
-		d.Password, _ = d.bwv.Secrets.DecryptStr(c.Login.Password)
+		d.Username, _ = d.bwv.Secrets.DecryptCipherStr(c.Login.Username, c.Key)
+		d.Password, _ = d.bwv.Secrets.DecryptCipherStr(c.Login.Password, c.Key)
 	}
 
 	var wg sync.WaitGroup
@@ -107,8 +107,8 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 		wg.Add(1)
 		go func(f types.Field) {
 			defer wg.Done()
-			name, _ := d.bwv.Secrets.DecryptStr(f.Name)
-			value, _ := d.bwv.Secrets.DecryptStr(f.Value)
+			name, _ := d.bwv.Secrets.DecryptCipherStr(f.Name, c.Key)
+			value, _ := d.bwv.Secrets.DecryptCipherStr(f.Value, c.Key)
 			fieldsMutex.Lock()
 			d.Fields[name] = value
 			fieldsMutex.Unlock()
@@ -119,7 +119,7 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 		wg.Add(1)
 		go func(a types.Attachment) {
 			defer wg.Done()
-			name, _ := d.bwv.Secrets.DecryptStr(*a.FileName)
+			name, _ := d.bwv.Secrets.DecryptCipherStr(*a.FileName, c.Key)
 			var (
 				size       int
 				err        error
@@ -141,7 +141,7 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 				return
 			}
 
-			if value, _ = d.DecryptUrl(attachment, size); err != nil {
+			if value, _ = d.DecryptUrl(attachment, size, c.Key); err != nil {
 				log.Println(err)
 				return
 			}
@@ -185,8 +185,10 @@ func (d *DecryptedCipher) GetAttachmentLocation(c string, a types.Attachment) (*
 	return &attachment, nil
 }
 
-// DecryptUrl takes an attachment and decrypts it using the user key.
-func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize int) ([]byte, error) {
+// DecryptUrl takes an attachment and decrypts it. itemKey is the owning
+// cipher's Key: when set, the attachment's data key is wrapped with the cipher
+// key rather than the user key.
+func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize int, itemKey *types.CipherString) ([]byte, error) {
 	var (
 		msg             types.SecretResponse
 		decrypted, data []byte
@@ -216,7 +218,7 @@ func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize 
 		return nil, err
 	}
 
-	if key, err = d.bwv.Secrets.Decrypt(*attachment.Key); err != nil {
+	if key, err = d.bwv.Secrets.DecryptCipher(*attachment.Key, itemKey); err != nil {
 		log.Println("error decrypting", attachment.URL, err)
 		return nil, err
 	}

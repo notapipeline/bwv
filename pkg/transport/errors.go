@@ -16,11 +16,30 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/notapipeline/bwv/pkg/types"
 )
+
+// IsPermanent reports whether err represents a client-side (4xx) failure that
+// will never succeed on retry. Network failures and 5xx responses are transient
+// and deliberately excluded so the caller keeps retrying those.
+func IsPermanent(err error) bool {
+	var (
+		badRequest   *ErrBadRequest
+		unauthorized *ErrUnauthorized
+		forbidden    *ErrForbidden
+		notFound     *ErrNotFound
+		conflict     *ErrConflict
+	)
+	return errors.As(err, &badRequest) ||
+		errors.As(err, &unauthorized) ||
+		errors.As(err, &forbidden) ||
+		errors.As(err, &notFound) ||
+		errors.As(err, &conflict)
+}
 
 type MaliciousTrafficError struct{}
 

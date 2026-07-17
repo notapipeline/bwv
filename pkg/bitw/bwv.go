@@ -113,13 +113,21 @@ func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 		go func(mychunk []types.Secret, folder, entry string, fid uuid.UUID) {
 			defer wg.Done()
 			for _, item := range mychunk {
+				var name string
+				var err error
 				if (folder == "." && item.FolderID == nil) || (item.FolderID != nil && *item.FolderID == fid) {
-					if name, err := b.Secrets.DecryptStr(item.Name); err == nil && (name == entry || entry == "*") {
+					if name, err = b.Secrets.DecryptCipherStr(item.Name, item.Key); err == nil && (name == entry || entry == "*") {
 						decryptedchan <- NewDecryptedCipher(b).Decrypt(item, name)
 					}
+					if err != nil {
+						log.Printf("[ERROR] cannot decrypt name for cipher id=%s: %v", item.ID, err)
+					}
 				} else if folder == "*" {
-					if name, err := b.Secrets.DecryptStr(item.Name); err == nil && (name == entry || entry == "*") {
+					if name, err = b.Secrets.DecryptCipherStr(item.Name, item.Key); err == nil && (name == entry || entry == "*") {
 						decryptedchan <- NewDecryptedCipher(b).Decrypt(item, name)
+					}
+					if err != nil {
+						log.Printf("[ERROR] cannot decrypt name for cipher id=%s: %v", item.ID, err)
 					}
 				} else if item.ID.String() == entry {
 					decryptedchan <- NewDecryptedCipher(b).Decrypt(item, entry)
@@ -202,14 +210,31 @@ func (b *Bwv) salt() string {
 	return fmt.Sprintf("__PROTECTED__%s%s", b.Secrets.Data.Sync.Profile.ID, types.UserAutoKey)
 }
 
+// credentialMode inspects the secrets pulled from the store and reports which
+// login path to use. ready is false when the store has not yet yielded a usable
+// credential set - typically because kwallet/libsecret is still locked at boot.
+// In that case the caller must exit and let systemd restart it rather than
+// hitting Bitwarden with blank credentials (which only earns a 4xx).
+func credentialMode(secrets map[string][]byte) (useApiKeys, ready bool) {
+	hasApiKeys := len(secrets["BW_CLIENTID"]) > 0 && len(secrets["BW_CLIENTSECRET"]) > 0
+	hasUserAuth := len(secrets["BW_PASSWORD"]) > 0 && len(secrets["BW_EMAIL"]) > 0
+	return hasApiKeys, hasApiKeys || hasUserAuth
+}
+
 // Setup the Bitwarden client
 func (b *Bwv) Setup() *Bwv {
 	var (
-		err        error
-		secrets    map[string][]byte = config.GetSecrets(true)
-		hashed     string
-		useApiKeys bool = secrets["BW_CLIENTID"] != nil && secrets["BW_CLIENTSECRET"] != nil
+		err     error
+		secrets map[string][]byte = config.GetSecrets(false)
+		hashed  string
 	)
+
+	useApiKeys, ready := credentialMode(secrets)
+	if !ready {
+		// Exit fast with no network traffic; systemd will restart us and we
+		// pick the credentials up as soon as the store unlocks.
+		log.Fatal("credential store not ready: no Bitwarden credentials available yet")
+	}
 
 	if useApiKeys {
 		log.Println("Setting up Bitwarden client using API key login")
@@ -327,7 +352,7 @@ func (b *Bwv) refresh(auth, done, pauseReconcile chan bool, firstRun bool) {
 
 				if apiLogin {
 					log.Println("Refreshing API token...")
-					if lr, err = b.ApiLogin(config.GetSecrets(true)); err != nil {
+					if lr, err = b.ApiLogin(config.GetSecrets(false)); err != nil {
 						log.Println("Could not refresh API token")
 						continue
 					}

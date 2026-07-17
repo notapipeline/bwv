@@ -265,6 +265,79 @@ func (c *SecretCache) Decrypt(s types.CipherString) ([]byte, error) {
 	return crypto.DecryptWith(s, key, c.macKey)
 }
 
+// cipherKeys returns the enc + mac keys used to decrypt a cipher's fields.
+//
+// When itemKey is nil (the common case) it returns a usable copy of the user
+// key. When the cipher carries its own key (Bitwarden "cipher key encryption"),
+// that key is itself a CipherString wrapped with the user key; it is unwrapped
+// here and split into its enc/mac halves so the cipher's fields can be decrypted
+// with it instead of the user key.
+//
+// All returned slices are owned copies that the caller is expected to scramble.
+func (c *SecretCache) cipherKeys(itemKey *types.CipherString) (key, macKey []byte, err error) {
+	var userKey []byte
+	if userKey, err = c.key(); err != nil {
+		return
+	}
+
+	if itemKey == nil || itemKey.IsZero() {
+		// No per-cipher key: use the user key. macKey is copied so the caller
+		// can scramble it without destroying the shared c.macKey.
+		key = userKey
+		macKey = append([]byte(nil), c.macKey...)
+		return
+	}
+
+	var raw []byte
+	if raw, err = crypto.DecryptWith(*itemKey, userKey, c.macKey); err != nil {
+		// crypto.DecryptWith scrambled userKey; nothing further to clean up.
+		return
+	}
+	defer memguard.ScrambleBytes(raw)
+
+	switch len(raw) {
+	case 32:
+		key = append([]byte(nil), raw...)
+	case 64:
+		key = append([]byte(nil), raw[:32]...)
+		macKey = append([]byte(nil), raw[32:64]...)
+	default:
+		err = fmt.Errorf("invalid cipher key length: %d", len(raw))
+	}
+	return
+}
+
+// DecryptCipher decrypts a single CipherString belonging to a cipher, returning
+// the plaintext bytes.
+//
+// itemKey is the owning cipher's Key field. When non-nil the cipher uses
+// per-item key encryption, so s is decrypted with the unwrapped item key;
+// otherwise s is decrypted with the user key (identical to Decrypt).
+func (c *SecretCache) DecryptCipher(s types.CipherString, itemKey *types.CipherString) ([]byte, error) {
+	if s.IsZero() {
+		return nil, nil
+	}
+
+	key, macKey, err := c.cipherKeys(itemKey)
+	if err != nil {
+		return nil, err
+	}
+	// crypto.DecryptWith scrambles key; scramble macKey ourselves once done.
+	defer memguard.ScrambleBytes(key)
+	defer memguard.ScrambleBytes(macKey)
+	return crypto.DecryptWith(s, key, macKey)
+}
+
+// DecryptCipherStr is the string-returning convenience wrapper around
+// DecryptCipher.
+func (c *SecretCache) DecryptCipherStr(s types.CipherString, itemKey *types.CipherString) (ret string, err error) {
+	var b []byte
+	if b, err = c.DecryptCipher(s, itemKey); err == nil {
+		ret = string(b)
+	}
+	return
+}
+
 // Encrypt takes a byte slice and encrypts it using the user key returning a
 // cipher string.
 //

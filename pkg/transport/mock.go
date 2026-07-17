@@ -56,12 +56,18 @@ func (m *MockHttpClient) Do(ctx context.Context, req *http.Request, recv any) er
 	response := m.Responses[0]
 	m.Responses = m.Responses[1:]
 	switch response.Code {
-	// Hard errors. cannot be retried
-	case 400, 401, 403, 404:
-		return &ErrUnknown{
-			Code: response.Code,
-			Body: []byte(response.Body),
-		}
+	// Hard errors. cannot be retried - mirror the concrete types the real
+	// client returns so transport.IsPermanent classifies them correctly.
+	case 400:
+		return &ErrBadRequest{Code: response.Code, Body: []byte(response.Body)}
+	case 401:
+		return &ErrUnauthorized{Code: response.Code, Body: []byte(response.Body)}
+	case 403:
+		return &ErrForbidden{Code: response.Code, Body: []byte(response.Body)}
+	case 404:
+		return &ErrNotFound{Code: response.Code, Body: []byte(response.Body)}
+	case 409:
+		return &ErrConflict{Code: response.Code, Body: []byte(response.Body)}
 	// Soft errors. can be retried
 	case 429, 500, 502, 503, 504:
 		return m.Do(ctx, req, recv)

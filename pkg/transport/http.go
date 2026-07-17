@@ -154,6 +154,8 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("User-Agent", "bwv/0.0.1")
+	req.Header.Set("Bitwarden-Client-Name", "cli")
+	req.Header.Set("Bitwarden-Client-Version", "2025.1.0")
 
 	var (
 		response *http.Response

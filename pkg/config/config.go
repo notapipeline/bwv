@@ -223,7 +223,7 @@ func getConfigPath(m ConfigMode) string {
 	if m == ConfigModeClient {
 		return fmt.Sprintf("%s/.config/bwv/client.yaml", home)
 	}
-	return fmt.Sprintf("%s/.config/bwv/server-test.yaml", home)
+	return fmt.Sprintf("%s/.config/bwv/server.yaml", home)
 }
 
 // CheckApiKey checks if an API key is valid for a given address

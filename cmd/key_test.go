@@ -62,30 +62,29 @@ func TestGenkeyCmd(t *testing.T) {
 				Responses: test.responses,
 			}
 
-			var buf bytes.Buffer
-			log.SetOutput(&buf)
-			of := fatal
-			defer func() {
-				fatal = of
-				log.SetFlags(log.Flags() & (log.Ldate | log.Ltime))
-			}()
-			fatal = func(format string, v ...interface{}) {
-				log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
-				log.Printf(format, v...)
-			}
-
-			orig := os.Stdout
-			defer func() {
-				os.Stdout = orig
-			}()
-
 			var (
 				r        *os.File
 				w        *os.File
 				err      error
 				response map[string]string
+				buf      bytes.Buffer
 			)
 			defer w.Close()
+
+			log.SetOutput(&buf)
+
+			of := fatal
+			orig := os.Stdout
+			defer func() {
+				fatal = of
+				log.SetFlags(log.Flags() & (log.Ldate | log.Ltime))
+
+				os.Stdout = orig
+			}()
+			fatal = func(format string, v ...interface{}) {
+				log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+				log.Printf(format, v...)
+			}
 
 			if r, w, err = os.Pipe(); err != nil {
 				t.Errorf("Unable to create pipe: %q", err)

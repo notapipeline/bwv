@@ -32,6 +32,10 @@ type preLoginRequest struct {
 	Email []byte `json:"email"`
 }
 
+// apiLoginRetryDelay is the pause between transient API-login retries. It is a
+// package variable so tests can drop it to zero.
+var apiLoginRetryDelay = 5 * time.Second
+
 // urlValues takes pairs of strings and returns a url.Values object
 func urlValues(pairs ...string) url.Values {
 	if len(pairs)%2 != 0 {
@@ -66,13 +70,21 @@ func (b *Bwv) ApiLogin(s map[string][]byte) (*types.LoginResponse, error) {
 	//
 	// As in most instances a delayed retry will succeed, we can wrap this here
 	// to try keep the process alive by adding a longer delay.
+	//
+	// A 4xx response (empty/invalid credentials - e.g. the credential store is
+	// still locked at boot) will never succeed on retry, so we break out
+	// immediately and let the caller exit fast rather than burning 5x5s on a
+	// request that cannot recover.
 	for i := 0; i < 5; i++ {
 		ctx := context.Background()
 		err = transport.DefaultHttpClient.Post(ctx, b.Endpoint.IdtServer+"/connect/token", &lr, login)
 		if err == nil {
 			break
 		}
-		<-time.After(time.Duration(5) * time.Second)
+		if transport.IsPermanent(err) {
+			break
+		}
+		<-time.After(apiLoginRetryDelay)
 	}
 
 	if err != nil {
