@@ -55,7 +55,7 @@ func (b *Bwv) ApiLogin(s map[string][]byte) (*types.LoginResponse, error) {
 	var (
 		err   error
 		lr    types.LoginResponse
-		login url.Values = urlValues(
+		login = urlValues(
 			"grant_type", "client_credentials",
 			"scope", "api",
 			"client_id", string(s["BW_CLIENTID"]),

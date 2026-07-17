@@ -99,12 +99,12 @@ func (b *Bwv) SetRegion(region Location) {
 // Get returns a slice of DecryptedCipher objects that match the path
 func (b *Bwv) Get(path string) ([]DecryptedCipher, bool) {
 	var (
-		entry         string = filepath.Base(path)
-		folder        string = filepath.Dir(path)
+		entry         = filepath.Base(path)
+		folder        = filepath.Dir(path)
 		fid           uuid.UUID
-		ciphers       [][]types.Secret      = chunk(b.Secrets.Data.Sync.Secrets, CHUNKSIZE)
-		decryptedchan chan *DecryptedCipher = make(chan *DecryptedCipher)
-		decrypted     []DecryptedCipher     = make([]DecryptedCipher, 0)
+		ciphers       = chunk(b.Secrets.Data.Sync.Secrets, CHUNKSIZE)
+		decryptedchan = make(chan *DecryptedCipher)
+		decrypted     = make([]DecryptedCipher, 0)
 	)
 
 	switch folder {
@@ -170,7 +170,7 @@ func (b *Bwv) CreateToken() string {
 
 // Decrypt the token sent as Bearer in the Authorization header
 func (b *Bwv) DecryptToken(token string) (string, error) {
-	var t types.CipherString = types.CipherString{}
+	var t = types.CipherString{}
 	if err := t.UnmarshalText([]byte(token)); err != nil {
 		return "", fmt.Errorf("could not unmarshal token: %v", err)
 	}
@@ -229,7 +229,7 @@ func credentialMode(secrets map[string][]byte) (useApiKeys, ready bool) {
 func (b *Bwv) Setup() (*Bwv, error) {
 	var (
 		err     error
-		secrets map[string][]byte = config.GetSecrets(false)
+		secrets = config.GetSecrets(false)
 		hashed  string
 	)
 
@@ -256,8 +256,8 @@ func (b *Bwv) Setup() (*Bwv, error) {
 	}
 
 	var (
-		auth chan bool = make(chan bool)
-		done chan bool = make(chan bool)
+		auth = make(chan bool)
+		done = make(chan bool)
 	)
 	go b.reconcile(auth)
 	go b.refresh(auth, done, true)
@@ -421,7 +421,7 @@ func chunk[T any](slice []T, size int) [][]T {
 
 // GetFolder returns the uuid of the folder that matches the path
 func (b *Bwv) getFolder(path string) uuid.UUID {
-	var folders [][]types.Folder = chunk(b.Secrets.Data.Sync.Folders, CHUNKSIZE)
+	var folders = chunk(b.Secrets.Data.Sync.Folders, CHUNKSIZE)
 	var uuidchan = make(chan uuid.UUID, 1)
 
 	var wg sync.WaitGroup

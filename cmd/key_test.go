@@ -107,8 +107,8 @@ func TestGenkeyCmd(t *testing.T) {
 
 			if test.expectedErr != nil {
 				var (
-					expected string = strings.TrimSpace(test.expectedErr.Error())
-					actual   string = strings.TrimSpace(buf.String())
+					expected = strings.TrimSpace(test.expectedErr.Error())
+					actual   = strings.TrimSpace(buf.String())
 				)
 				if expected != actual {
 					t.Errorf("Expected log output %q, but got %q", expected, actual)
@@ -184,9 +184,9 @@ func TestRevokeCmd(t *testing.T) {
 			}
 
 			Execute()
-			var actual string = strings.TrimSpace(buf.String())
+			var actual = strings.TrimSpace(buf.String())
 			if test.expectedErr != nil {
-				var expected string = strings.TrimSpace(test.expectedErr.Error())
+				var expected = strings.TrimSpace(test.expectedErr.Error())
 
 				if expected != actual {
 					t.Errorf("Expected log output %q, but got %q", expected, actual)

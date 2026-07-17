@@ -99,7 +99,7 @@ func GetSecretsFromUserEnvOrStore(userInteractive bool) map[string][]byte {
 	}
 
 	for k := range secrets {
-		var s string = getSecret(k)
+		var s = getSecret(k)
 		secrets[k] = []byte(s)
 		if s == "" && userInteractive {
 			switch k {
@@ -126,7 +126,7 @@ func password(title, description, prompt string) ([]byte, error) {
 			err         error
 			client      *pinentry.Client
 			password    string
-			usePinentry bool = true
+			usePinentry = true
 		)
 
 		if client, err = GetPinentry(

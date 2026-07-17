@@ -80,7 +80,7 @@ func DeriveMasterKey(password []byte, email string, kdf types.KDFInfo) (b []byte
 	case types.KDFTypePBKDF2:
 		b, err = pbkdfKey(password, []byte(strings.ToLower(email)), kdf.Iterations, 32, sha256.New), nil
 	case types.KDFTypeArgon2id:
-		var salt [32]byte = sha256.Sum256([]byte(strings.ToLower(email)))
+		var salt = sha256.Sum256([]byte(strings.ToLower(email)))
 		b, err = argon2ID(password, salt[:], uint32(kdf.Iterations),
 			uint32(*kdf.Memory*1024), uint8(*kdf.Parallelism), 32), nil
 	default:
@@ -178,7 +178,7 @@ func EncryptAes(data []byte, csType types.CipherStringType, key, macKey []byte) 
 	}
 
 	var (
-		encType     []byte = []byte{byte(csType)}
+		encType     = []byte{byte(csType)}
 		iv, mac, ct []byte
 		err         error
 	)
@@ -224,7 +224,7 @@ func encrypt(encType types.CipherStringType, data, key, keyMac []byte) (iv, mac,
 
 		var (
 			msg   []byte
-			mHash hash.Hash = hmac.New(sha256.New, keyMac)
+			mHash = hmac.New(sha256.New, keyMac)
 		)
 
 		msg = append(msg, iv...)
@@ -294,7 +294,7 @@ func DecryptAes(data []byte, key, keyMac []byte) ([]byte, error) {
 	defer memguard.ScrambleBytes(key)
 	var (
 		iv, mac, ct []byte
-		encType     types.CipherStringType = types.CipherStringType(data[0])
+		encType     = types.CipherStringType(data[0])
 	)
 
 	switch encType {

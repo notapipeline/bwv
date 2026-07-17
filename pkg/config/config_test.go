@@ -173,7 +173,7 @@ port: 0
 token: ""
 `)
 	if string(data) != string(expectedData) {
-		t.Errorf(diff.Diff(string(expectedData), string(data)))
+		t.Error(diff.Diff(string(expectedData), string(data)))
 	}
 }
 
@@ -260,7 +260,7 @@ func TestConfig_CheckApiKey(t *testing.T) {
 			}
 
 			if actual != test.expected {
-				var as string = "invalid"
+				var as = "invalid"
 				if test.expected {
 					as = "valid"
 				}
@@ -330,6 +330,6 @@ port: 0
 token: ""
 `)
 	if string(data) != string(expectedData) {
-		t.Errorf(diff.Diff(string(expectedData), string(data)))
+		t.Error(diff.Diff(string(expectedData), string(data)))
 	}
 }

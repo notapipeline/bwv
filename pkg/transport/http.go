@@ -52,8 +52,8 @@ type AuthToken struct{}
 func (c *client) Post(ctx context.Context, urlstr string, recv, send any) error {
 	var (
 		reader      io.Reader
-		contentType string = "application/json"
-		authEmail   string = ""
+		contentType = "application/json"
+		authEmail   = ""
 		request     *http.Request
 		err         error
 		buffer      *bytes.Buffer

@@ -71,9 +71,9 @@ var genkeyCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var (
 			err          error
-			localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			localAddress = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 			response     types.SecretResponse
-			ctx          context.Context = context.Background()
+			ctx          = context.Background()
 		)
 
 		{
@@ -111,8 +111,8 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 			r            map[string]any
 			err          error
 			response     types.SecretResponse
-			localAddress string          = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
-			ctx          context.Context = context.Background()
+			localAddress = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			ctx          = context.Background()
 		)
 		{
 			clientCmd.Token = getEncryptedToken()

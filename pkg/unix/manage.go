@@ -28,8 +28,8 @@ import (
 // StartService starts the bwv service
 func StartService(serviceName string) error {
 	var (
-		channel chan string = make(chan string)
-		service string      = fmt.Sprintf("%s.service", serviceName)
+		channel = make(chan string)
+		service = fmt.Sprintf("%s.service", serviceName)
 		err     error
 	)
 	log.Printf("Starting %s service\n", serviceName)
@@ -45,8 +45,8 @@ func StartService(serviceName string) error {
 // StopService stops the bwv service
 func StopService(serviceName string) error {
 	var (
-		channel chan string = make(chan string)
-		service string      = fmt.Sprintf("%s.service", serviceName)
+		channel = make(chan string)
+		service = fmt.Sprintf("%s.service", serviceName)
 		err     error
 	)
 	log.Printf("Stopping %s service\n", serviceName)
@@ -62,9 +62,9 @@ func StopService(serviceName string) error {
 func ServiceStatus(serviceName string) (string, error) {
 	var (
 		err      error
-		service  string = fmt.Sprintf("%s.service", serviceName)
+		service  = fmt.Sprintf("%s.service", serviceName)
 		statuses []dbus.UnitStatus
-		ctx      context.Context = context.Background()
+		ctx      = context.Background()
 	)
 
 	if statuses, err = systemd.ListUnitsByNamesContext(ctx, []string{service}); err != nil {

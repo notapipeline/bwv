@@ -173,7 +173,7 @@ func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
 		scramble = true
 	}
 
-	var buf *memguard.LockedBuffer = memguard.NewBuffer(32)
+	var buf = memguard.NewBuffer(32)
 	if !scramble {
 		switch len(finalKey) {
 		case 32:

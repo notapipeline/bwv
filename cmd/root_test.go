@@ -137,7 +137,7 @@ func TestRootCmd(t *testing.T) {
 			}
 
 			// Set the command's output to the buffer
-			var buf *bytes.Buffer = new(bytes.Buffer)
+			var buf = new(bytes.Buffer)
 			rootCmd.SetOutput(buf)
 
 			os.Args = test.args

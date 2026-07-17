@@ -118,9 +118,9 @@ var serveCmd = &cobra.Command{
 		serve.Merge(&clientCmd)
 		var (
 			autoload   chan bool
-			done       chan bool        = make(chan bool)
-			signals    chan os.Signal   = make(chan os.Signal, 1)
-			server     *bitw.HttpServer = bitw.NewHttpServer(cnf)
+			done       = make(chan bool)
+			signals    = make(chan os.Signal, 1)
+			server     = bitw.NewHttpServer(cnf)
 			autoloader *unix.Autoloader
 		)
 

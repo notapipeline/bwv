@@ -80,7 +80,7 @@ func (c *Config) Load(m ConfigMode) (err error) {
 // loadYaml loads the config file from the user local config directory
 func (c *Config) loadYaml(m ConfigMode) (err error) {
 	var (
-		cp       string = ConfigPath(m)
+		cp       = ConfigPath(m)
 		yamlFile []byte
 	)
 
@@ -210,7 +210,7 @@ func (c *Config) Save() (err error) {
 		return err
 	}
 
-	var cp string = ConfigPath(ConfigModeServer)
+	var cp = ConfigPath(ConfigModeServer)
 	if err = os.MkdirAll(filepath.Dir(cp), 0700); err != nil {
 		return err
 	}

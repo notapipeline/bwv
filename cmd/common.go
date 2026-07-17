@@ -52,8 +52,8 @@ var getSecretsFromUserEnvOrStore func(v bool) map[string][]byte = tools.GetSecre
 // getKdf reads kdf info from the local bwv server for encrypting data sent to
 // the server
 func getKdf() (kdf types.KDFInfo) {
-	var ctx context.Context = context.Background()
-	var localAddress string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+	var ctx = context.Background()
+	var localAddress = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 	if err := transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
 		fatal("unable to get kdf info: %q", err)
 	}
@@ -63,10 +63,10 @@ func getKdf() (kdf types.KDFInfo) {
 // getEncryptedToken encrypts the token using the password and email address
 func getEncryptedToken() string {
 	var (
-		secrets map[string][]byte = getSecretsFromUserEnvOrStore(false)
+		secrets = getSecretsFromUserEnvOrStore(false)
 		err     error
 		token   string
-		kdf     types.KDFInfo = getKdf()
+		kdf     = getKdf()
 	)
 
 	if clientCmd.Token == "" {
@@ -127,7 +127,7 @@ func toSecret(r map[string]any) error {
 	var (
 		name string
 		ok   bool
-		data map[string][]byte = make(map[string][]byte)
+		data = make(map[string][]byte)
 		b    []byte
 		err  error
 	)

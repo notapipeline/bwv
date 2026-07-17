@@ -277,7 +277,7 @@ func TestDeriveMasterKey(t *testing.T) {
 				return
 			}
 
-			var k string = base64.StdEncoding.EncodeToString(key)
+			var k = base64.StdEncoding.EncodeToString(key)
 			if err != nil {
 				t.Errorf("Expected nil error but got %v", err)
 			}
@@ -412,8 +412,8 @@ func TestEncryptWith(t *testing.T) {
 func TestDecryptWithMissingMAC(t *testing.T) {
 	var (
 		cs       types.CipherString
-		exp      string = "2.MXGlACtpskXxMLTVQxT2gA==|macyrS8aApZ8roMxmHxCbQ==|moqXd+Yj14k7F+SQ8pScS0oJShShYMZIBo3/LksOdV4="
-		mpw      []byte = pbkdf2.Key([]byte("masterpw"), []byte("email@example.com"), 800000, 32, sha256.New)
+		exp      = "2.MXGlACtpskXxMLTVQxT2gA==|macyrS8aApZ8roMxmHxCbQ==|moqXd+Yj14k7F+SQ8pScS0oJShShYMZIBo3/LksOdV4="
+		mpw      = pbkdf2.Key([]byte("masterpw"), []byte("email@example.com"), 800000, 32, sha256.New)
 		key, mac []byte
 		err      error
 	)

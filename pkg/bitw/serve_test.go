@@ -103,7 +103,7 @@ func TestHttpServerReload(t *testing.T) {
 			}
 
 			var (
-				cnf *config.Config = config.New()
+				cnf = config.New()
 				err error
 			)
 			// Create a new instance of HttpServer
@@ -213,11 +213,11 @@ func TestStoreToken(t *testing.T) {
 			var (
 				err                     error
 				cs                      types.CipherString
-				encryptedMasterPassword string = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
+				encryptedMasterPassword = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
 					"gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/" +
 					"19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|" +
 					"uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4="
-				pbkdf types.KDFInfo = types.KDFInfo{
+				pbkdf = types.KDFInfo{
 					Type:        types.KDFTypePBKDF2,
 					Iterations:  800000,
 					Memory:      types.IntPtr(0),
@@ -233,7 +233,7 @@ func TestStoreToken(t *testing.T) {
 				test.remoteIp = test.ipAddress
 			}
 
-			var cnf *config.Config = config.New()
+			var cnf = config.New()
 
 			// Create a new instance of HttpServer
 			server := NewHttpServer(cnf)
@@ -492,7 +492,7 @@ func TestGetPath(t *testing.T) {
 				test.mocks()
 			}
 
-			var cnf *config.Config = config.New()
+			var cnf = config.New()
 			if err = cnf.Load(config.ConfigModeServer); err != nil {
 				t.Fatal(err)
 			}

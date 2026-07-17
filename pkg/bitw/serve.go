@@ -21,7 +21,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -53,7 +52,7 @@ func NewHttpServer(config *config.Config) *HttpServer {
 
 // writeResponseError writes an error response to the client
 func (s *HttpServer) writeResponseError(w http.ResponseWriter, message string, code int, err error) {
-	var msg string = fmt.Sprintf("error: %d : %q", code, message)
+	var msg = fmt.Sprintf("error: %d : %q", code, message)
 	if s.config.Server.Debug {
 		debug.PrintStack()
 	}
@@ -218,8 +217,8 @@ func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 	}
 
 	var (
-		useWhitelist bool = len(s.config.Whitelist()) != 0
-		matched      bool = false
+		useWhitelist = len(s.config.Whitelist()) != 0
+		matched      = false
 	)
 
 	if useWhitelist {
@@ -237,8 +236,8 @@ func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 // validate checks the request is valid
 func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	var (
-		addr  string   = strings.Split(r.RemoteAddr, ":")[0]
-		auth  []string = strings.Split(r.Header.Get("Authorization"), " ")
+		addr  = strings.Split(r.RemoteAddr, ":")[0]
+		auth  = strings.Split(r.Header.Get("Authorization"), " ")
 		err   error
 		token []byte
 	)
@@ -261,7 +260,7 @@ func (s *HttpServer) validate(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	// Verify the sent token can be decrypted with the known master password
-	var handshakeToken types.CipherString = types.CipherString{}
+	var handshakeToken = types.CipherString{}
 	if err = handshakeToken.UnmarshalText([]byte(auth[1])); err != nil {
 		token = []byte(auth[1]) // this will be a plaintext token
 	} else {
@@ -302,14 +301,14 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		addr    string = strings.Split(r.RemoteAddr, ":")[0]
-		path    string = strings.TrimLeft(r.URL.Path, "/")
+		addr    = strings.Split(r.RemoteAddr, ":")[0]
+		path    = strings.TrimLeft(r.URL.Path, "/")
 		ciphers []DecryptedCipher
 		ok      bool
-		params  map[string][]string = make(map[string][]string)
+		params  = make(map[string][]string)
 	)
 
-	var urlValues url.Values = r.URL.Query()
+	var urlValues = r.URL.Query()
 	for k, v := range urlValues {
 		params[k] = strings.Split(v[0], ",")
 	}
@@ -324,7 +323,7 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var secretResponse types.SecretResponse = types.SecretResponse{
+	var secretResponse = types.SecretResponse{
 		Message: s.shapeResponse(ciphers, params),
 	}
 
@@ -366,7 +365,7 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var responses map[string][]string = make(map[string][]string)
+	var responses = make(map[string][]string)
 
 	for _, a := range addresses {
 		if err = s.config.DeleteApiKey(a); err != nil {
@@ -383,7 +382,7 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 		responses["revoked"] = append(responses["revoked"], a)
 	}
 
-	var response types.SecretResponse = types.SecretResponse{
+	var response = types.SecretResponse{
 		Message: responses,
 	}
 
@@ -428,7 +427,7 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var responses map[string]string = make(map[string]string)
+	var responses = make(map[string]string)
 
 	for _, a := range addresses {
 		token = s.Bwv.CreateToken()
@@ -446,7 +445,7 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 		responses[a] = token
 	}
 
-	var response types.SecretResponse = types.SecretResponse{
+	var response = types.SecretResponse{
 		Message: responses,
 	}
 
@@ -493,11 +492,11 @@ func (s *HttpServer) kdf(w http.ResponseWriter, r *http.Request) {
 func (s *HttpServer) ListenAndServe(cmdConfig *types.ServeCmd, autoload *chan bool) (err error) {
 	var (
 		listener net.Listener
-		port     int = DefaultPort
+		port     = DefaultPort
 		server   *http.ServeMux
 	)
 
-	var runtimeDir string = os.Getenv("XDG_RUNTIME_DIR")
+	var runtimeDir = os.Getenv("XDG_RUNTIME_DIR")
 	if runtimeDir == "" {
 		runtimeDir = os.TempDir()
 	}

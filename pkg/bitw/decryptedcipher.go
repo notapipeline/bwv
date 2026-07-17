@@ -157,10 +157,10 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 // GetAttachmentLocation queries the API to get the real location of the attachment.
 func (d *DecryptedCipher) GetAttachmentLocation(c string, a types.Attachment) (*types.Attachment, error) {
 	var (
-		apiurl     string = d.bwv.Endpoint.ApiServer + "/ciphers/" + c + "/attachment/" + a.ID
+		apiurl     = d.bwv.Endpoint.ApiServer + "/ciphers/" + c + "/attachment/" + a.ID
 		req        *http.Request
 		err        error
-		ctx        context.Context = context.Background()
+		ctx        = context.Background()
 		attachment types.Attachment
 	)
 
@@ -194,7 +194,7 @@ func (d *DecryptedCipher) DecryptUrl(attachment *types.Attachment, expectedSize 
 		decrypted, data []byte
 		err             error
 		req             *http.Request
-		ctx             context.Context = context.Background()
+		ctx             = context.Background()
 		key, mac        []byte
 	)
 

@@ -57,12 +57,12 @@ func TestInstancePassword(t *testing.T) {
 	cache, _ := Instance([]byte("masterpw"), []byte("email"), pbkdf)
 
 	var (
-		expectedPasswd string = "w\x0eK\xc6\x0er\xd6eg\xce\xec\r\n\xebAN\xa1\x80\"\x96=hN\x15\x8d\x98\xfe\xac\v\xdcT\x1d"
+		expectedPasswd = "w\x0eK\xc6\x0er\xd6eg\xce\xec\r\n\xebAN\xa1\x80\"\x96=hN\x15\x8d\x98\xfe\xac\v\xdcT\x1d"
 		mpw            []byte
 		err            error
 		receivedPasswd string
-		expected       string = "CCjdBXfDr1pZDn29R998UsQsLkqkadyk27CFlhUxDEk="
-		received       string = cache.HashPassword([]byte("masterpw"))
+		expected       = "CCjdBXfDr1pZDn29R998UsQsLkqkadyk27CFlhUxDEk="
+		received       = cache.HashPassword([]byte("masterpw"))
 	)
 
 	if mpw, err = MasterPassword(); err != nil {
@@ -92,10 +92,10 @@ func TestEncryptDecryptAesCbc256HmacSha256B64(t *testing.T) {
 	cache, _ := Instance([]byte("masterpw"), []byte("email@example.com"), pbkdf)
 
 	var (
-		expected                string = "test"
+		expected                = "test"
 		encrypted               types.CipherString
 		cs                      types.CipherString
-		encryptedMasterPassword string = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
+		encryptedMasterPassword = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
 			"gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/" +
 			"19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|" +
 			"uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4="
@@ -132,7 +132,7 @@ func TestEncryptDecryptAesCbc256B64(t *testing.T) {
 	var (
 		encryptedMasterPassword = "0.NayR3jdlY9tNpp6YEMtP2Q==|" +
 			"PW/yzOubp8jBegTvyb88zkVmSStPULi1UqLNiPOiezjjXdOyOkTr4CLW5BLolfza"
-		expected  string = "test"
+		expected  = "test"
 		encrypted types.CipherString
 		cs        types.CipherString
 	)
@@ -169,7 +169,7 @@ func TestRequestDecryptionAndEncryptionWithZeroBytes(t *testing.T) {
 	var (
 		encrypted               types.CipherString
 		cs                      types.CipherString
-		encryptedMasterPassword string = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
+		encryptedMasterPassword = "2.i/7aEu9Pc3WI8hvaADB/Fg==|" +
 			"gFxSM2jOaUbJpfYharUTX/OEEnUHSwDoLEZKXt1bAAxAhZpxaj8zE/" +
 			"19tiC7o12BRwPpydQb7bjmGDIG8unMNpt9rL29N83qY8tmfQCtMeA=|" +
 			"uhT83UtbUx8Ls2NYHFUh8ny5a4vdAObg/7aLWJeYtH4="

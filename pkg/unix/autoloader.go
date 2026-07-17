@@ -59,7 +59,7 @@ type Autoloader struct {
 // during discovery, so it is not recommended to use this function on large
 // vaults.
 func NewAutoloader(bwv *bitw.Bwv) *Autoloader {
-	var path string = filepath.Join(os.Getenv("HOME"), ".config", "bwv", "environment")
+	var path = filepath.Join(os.Getenv("HOME"), ".config", "bwv", "environment")
 
 	if err := os.MkdirAll(path, 0700); err != nil {
 		log.Fatalf("failed to create environment directory %q : error was %q", path, err)
@@ -109,7 +109,7 @@ func (a *Autoloader) AutoLoad(bwv *bitw.Bwv) error {
 		}
 
 		if environment, ok = c.Fields["environment"]; ok {
-			var environments []string = strings.Split(environment, ",")
+			var environments = strings.Split(environment, ",")
 			e := a.createEnvironmentFile(environments, &c)
 			if e != nil {
 				errors = append(errors, e)
@@ -186,7 +186,7 @@ func (a *Autoloader) addCipherKeys(autoload string, c *bitw.DecryptedCipher) (er
 		attachments = c.Attachments
 	default:
 		attachments = make(map[string]string)
-		var names []string = strings.Split(autoload, ",")
+		var names = strings.Split(autoload, ",")
 		for _, name := range names {
 			if _, ok := c.Attachments[name]; ok {
 				attachments[name] = c.Attachments[name]
@@ -304,7 +304,7 @@ func (a *Autoloader) getKeygrips(fingerprint string) (kg []string, err error) {
 		stdout  strings.Builder
 		stderr  strings.Builder
 		gpgCmd  *exec.Cmd
-		gpgArgs []string = []string{
+		gpgArgs = []string{
 			"--with-keygrip", "--with-colons",
 			"--list-secret-keys", fingerprint,
 		}
@@ -347,7 +347,7 @@ func unlockKeys(kg string, passphrase []byte) error {
 		err    error
 		stdout strings.Builder
 		stderr strings.Builder
-		reader bytes.Reader = *bytes.NewReader(passphrase)
+		reader = *bytes.NewReader(passphrase)
 	)
 
 	gpgCmd = exec.Command("/usr/lib/gnupg2/gpg-preset-passphrase", "-c", kg)
@@ -373,8 +373,8 @@ func (a *Autoloader) addPGPKey(key, passphrase []byte, filename string) error {
 		stdout  strings.Builder
 		stderr  strings.Builder
 		gpgCmd  *exec.Cmd
-		reader  bytes.Reader = *bytes.NewReader(key)
-		gpgArgs []string     = []string{
+		reader  = *bytes.NewReader(key)
+		gpgArgs = []string{
 			"--batch", "--yes",
 			"--pinentry-mode", "loopback",
 		}

@@ -53,12 +53,12 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		// Send to server
 		var (
 			req         *http.Request
-			ctx         context.Context = context.Background()
+			ctx         = context.Background()
 			err         error
-			address     string = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
-			fields      string = "fields=" + strings.Join(vaultItem.Fields, ",")
-			props       string = "properties=" + strings.Join(vaultItem.Parameters, ",")
-			attachments string = "attachments=" + strings.Join(vaultItem.Attachments, ",")
+			address     = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
+			fields      = "fields=" + strings.Join(vaultItem.Fields, ",")
+			props       = "properties=" + strings.Join(vaultItem.Parameters, ",")
+			attachments = "attachments=" + strings.Join(vaultItem.Attachments, ",")
 		)
 
 		if vaultItem.Path == "" {
@@ -83,7 +83,7 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		clientCmd.Token = getEncryptedToken()
 
 		ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
-		var getProperties []string = make([]string, 0)
+		var getProperties = make([]string, 0)
 		if attachments != "attachments=" {
 			getProperties = append(getProperties, attachments)
 		}
@@ -104,7 +104,7 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			getProperties = append(getProperties, "securenotes=true")
 		}
 
-		var parameters string = strings.Join(getProperties, "&")
+		var parameters = strings.Join(getProperties, "&")
 
 		if req, err = http.NewRequest("GET", address+"/"+vaultItem.Path+"?"+parameters, nil); err != nil {
 			fatal("unable to create request for %s: %q", address, err)
@@ -129,7 +129,7 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		if items, ok = r.Message.([]any); ok {
 			for index, item := range items {
 				if name, ok := item.(map[string]any)["name"]; ok {
-					var n string = strings.Replace(vaultItem.Path, "*", "", -1)
+					var n = strings.ReplaceAll(vaultItem.Path, "*", "")
 					if filepath.Base(n) != name.(string) {
 						n = filepath.Join(n, name.(string))
 					}
@@ -158,10 +158,10 @@ func Execute() {
 		// This is kinda ugly but we want to be able to ask for a path
 		// without specifying the flag. So we'll try to map any unknown
 		// single argument to the path flag and re-trigger the command.
-		var args []string = make([]string, 0)
+		var args = make([]string, 0)
 		args = append(args, os.Args[0])
 		for i := 1; i < len(os.Args); {
-			var f string = os.Args[i]
+			var f = os.Args[i]
 			switch f {
 			case "-t", "--token", "-f", "--fields", "-p", "--params",
 				"-a", "--attachments", "-P", "--path", "-o", "--output":

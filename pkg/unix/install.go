@@ -62,8 +62,8 @@ func InstallService(serviceName string) error {
 	home, _ := os.UserHomeDir()
 	var (
 		err         error
-		service     string = fmt.Sprintf("%s.service", serviceName)
-		servicePath string = filepath.Join(home, ".config/systemd/user", service)
+		service     = fmt.Sprintf("%s.service", serviceName)
+		servicePath = filepath.Join(home, ".config/systemd/user", service)
 		file        *os.File
 	)
 
@@ -82,7 +82,7 @@ func InstallService(serviceName string) error {
 	file.Close()
 
 	log.Printf("Enabling systemd user service '%s' and reloading daemon\n", serviceName)
-	var files []string = []string{service}
+	var files = []string{service}
 	{
 		_, _, err = systemd.EnableUnitFilesContext(context.Background(), files, false, true)
 		if err != nil {
@@ -102,9 +102,9 @@ func RemoveService(serviceName string) error {
 	home, _ := os.UserHomeDir()
 	var (
 		err         error
-		channel     chan string = make(chan string)
-		service     string      = fmt.Sprintf("%s.service", serviceName)
-		servicePath string      = filepath.Join(home, ".config/systemd/user", service)
+		channel     = make(chan string)
+		service     = fmt.Sprintf("%s.service", serviceName)
+		servicePath = filepath.Join(home, ".config/systemd/user", service)
 	)
 	_, err = systemd.StopUnitContext(context.Background(), service, "replace", channel)
 	if err != nil {
@@ -112,7 +112,7 @@ func RemoveService(serviceName string) error {
 	}
 	log.Println(<-channel)
 
-	var files []string = []string{service}
+	var files = []string{service}
 	_, err = systemd.DisableUnitFilesContext(context.Background(), files, false)
 	if err != nil {
 		return fmt.Errorf("Failed to disable the %s service: %v", serviceName, err)
