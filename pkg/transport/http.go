@@ -149,7 +149,41 @@ func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv any)
 // against the `Err` property.
 //
 // On success the response body will be JSON decoded into the given recv object.
-func (c *client) Do(ctx context.Context, req *http.Request, recv any) error { //nolint:gocyclo // TODO: extract the status-code switch into a classifier (cyclomatic complexity 17)
+// statusError maps an HTTP status code to the corresponding typed error. It
+// returns nil for 200 OK. Permanent (4xx) failures are wrapped in
+// backoff.PermanentError so callers don't retry them; 429/5xx and unknown codes
+// are returned bare so they remain retryable. A 400 carrying a two-factor
+// challenge is decoded into a TwoFactorRequiredError.
+func statusError(statusCode int, body []byte) error {
+	switch statusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusBadRequest:
+		if bytes.Contains(body, []byte("TwoFactor")) || bytes.Contains(body, []byte("Two-step")) {
+			var tfa TwoFactorRequiredError
+			if err := json.Unmarshal(body, &tfa); err == nil {
+				return &backoff.PermanentError{Err: &tfa}
+			}
+		}
+		return &backoff.PermanentError{Err: &ErrBadRequest{statusCode, body}}
+	case http.StatusUnauthorized:
+		return &backoff.PermanentError{Err: &ErrUnauthorized{statusCode, body}}
+	case http.StatusForbidden:
+		return &backoff.PermanentError{Err: &ErrForbidden{statusCode, body}}
+	case http.StatusNotFound:
+		return &backoff.PermanentError{Err: &ErrNotFound{statusCode, body}}
+	case http.StatusConflict:
+		return &backoff.PermanentError{Err: &ErrConflict{statusCode, body}}
+	case http.StatusTooManyRequests:
+		return &ErrTooManyRequests{statusCode, body}
+	case http.StatusInternalServerError:
+		return &ErrInternal{statusCode, body}
+	default:
+		return &ErrUnknown{statusCode, body}
+	}
+}
+
+func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 	if token, ok := ctx.Value(AuthToken{}).(string); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -171,45 +205,8 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error { //
 		return err
 	}
 
-	switch response.StatusCode {
-	case http.StatusOK:
-		break
-	case http.StatusBadRequest:
-		if bytes.Contains(body, []byte("TwoFactor")) || bytes.Contains(body, []byte("Two-step")) {
-			var tfa TwoFactorRequiredError
-			if err = json.Unmarshal(body, &tfa); err == nil {
-				return &backoff.PermanentError{
-					Err: &tfa,
-				}
-			}
-		}
-
-		return &backoff.PermanentError{
-			Err: &ErrBadRequest{response.StatusCode, body},
-		}
-	case http.StatusUnauthorized:
-		return &backoff.PermanentError{
-			Err: &ErrUnauthorized{response.StatusCode, body},
-		}
-	case http.StatusForbidden:
-		return &backoff.PermanentError{
-			Err: &ErrForbidden{response.StatusCode, body},
-		}
-	case http.StatusNotFound:
-		return &backoff.PermanentError{
-			Err: &ErrNotFound{response.StatusCode, body},
-		}
-	case http.StatusConflict:
-		return &backoff.PermanentError{
-			Err: &ErrConflict{response.StatusCode, body},
-		}
-	case http.StatusTooManyRequests:
-		return &ErrTooManyRequests{response.StatusCode, body}
-	case http.StatusInternalServerError:
-		return &ErrInternal{response.StatusCode, body}
-	default:
-		return &ErrUnknown{response.StatusCode, body}
-
+	if err = statusError(response.StatusCode, body); err != nil {
+		return err
 	}
 
 	if err = json.Unmarshal(body, recv); err != nil {
