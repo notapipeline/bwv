@@ -152,7 +152,7 @@ func password(title, description, prompt string) ([]byte, error) {
 			}
 		}
 		if password == "" {
-			return nil, fmt.Errorf("No password provided")
+			return nil, fmt.Errorf("no password provided")
 		}
 		password = strings.TrimSpace(password)
 		return []byte(password), err

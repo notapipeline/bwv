@@ -79,7 +79,9 @@ func InstallService(serviceName string) error {
 	if err = file.Sync(); err != nil {
 		return fmt.Errorf("Unable to sync service file: %v", err)
 	}
-	file.Close()
+	if err = file.Close(); err != nil {
+		return fmt.Errorf("Unable to close service file: %v", err)
+	}
 
 	log.Printf("Enabling systemd user service '%s' and reloading daemon\n", serviceName)
 	var files = []string{service}

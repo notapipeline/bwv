@@ -27,7 +27,7 @@ var service *gosecret.Service
 // Gets a secret from libsecrets
 func getSecretFromSecretsService(what string) (string, error) {
 	if os.Getenv("USE_KWALLET") != "" {
-		return "", fmt.Errorf("Skipping libesecret")
+		return "", fmt.Errorf("skipping libesecret")
 	}
 
 	var (

@@ -27,7 +27,7 @@ var wm *gokwallet.WalletManager
 // Gets a secret value from kwallet
 func getSecretFromKWallet(what string) (string, error) {
 	if os.Getenv("USE_LIBSECRET") != "" {
-		return "", fmt.Errorf("Skipping kwallet")
+		return "", fmt.Errorf("skipping kwallet")
 	}
 
 	var err error

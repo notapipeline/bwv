@@ -148,7 +148,9 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 		if file, err = os.Create(name); err != nil {
 			return fmt.Errorf("cipher %q : failed to create environment file %q : error was %q", c.Name, name, err)
 		}
-		file.Close()
+		if err = file.Close(); err != nil {
+			return fmt.Errorf("cipher %q : failed to close environment file %q : error was %q", c.Name, name, err)
+		}
 
 		// These files contain sensitive information, so we should set the
 		// permissions to User read/write only - no group or other access.
@@ -161,7 +163,6 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 	if file, err = os.OpenFile(name, os.O_WRONLY, 0600); err != nil {
 		return fmt.Errorf("cipher %q : failed to open environment file %q : error was %q", c.Name, name, err)
 	}
-	defer file.Close()
 
 	for _, e := range environment {
 		e = strings.TrimSpace(e)
@@ -173,7 +174,13 @@ func (a *Autoloader) createEnvironmentFile(environment []string, c *bitw.Decrypt
 	}
 
 	if _, err = file.WriteString(envData); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("cipher %q : failed to write environment file %q : error was %q", c.Name, name, err)
+	}
+	// Check the close error explicitly - a deferred close would drop a flush
+	// failure and silently truncate this sensitive env file.
+	if err = file.Close(); err != nil {
+		return fmt.Errorf("cipher %q : failed to close environment file %q : error was %q", c.Name, name, err)
 	}
 	return
 }
