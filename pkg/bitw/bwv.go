@@ -349,36 +349,45 @@ func (b *Bwv) refresh(auth, done chan bool, firstRun bool) {
 		case <-time.After(time.Duration(b.lr.ExpiresIn-5) * time.Second):
 			go func() { auth <- true }()
 		case <-auth:
-			b.reconcilePaused.Store(true)
-			if b.Secrets.Data != nil {
-				lr, err := b.reauth()
-				if err != nil {
-					log.Println(err)
-					b.reconcilePaused.Store(false)
-					continue
-				}
-				b.lr = lr
-			}
-
-			log.Println("Syncing...")
-			if err := b.Sync(); err != nil {
-				log.Println(err)
-			}
-
-			// We need to force the calling method to wait until the first sync
-			// has completed before it is allowed to return.
-			if firstRun {
-				firstRun = false
-				done <- true
-			}
-			b.reconcilePaused.Store(false)
-
-			// Call the autoloader if it has been set
-			if b.autoload != nil {
-				*b.autoload <- true
-			}
+			firstRun = b.reauthAndSync(done, firstRun)
 		}
 	}
+}
+
+// reauthAndSync pauses reconciliation, re-authenticates (when a session exists)
+// and re-syncs the cache. It returns the (possibly cleared) firstRun flag: on
+// the first successful sync it signals done so Setup can return, but if reauth
+// fails firstRun is left set so the next cycle retries the handshake rather than
+// leaving Setup blocked forever.
+func (b *Bwv) reauthAndSync(done chan bool, firstRun bool) bool {
+	b.reconcilePaused.Store(true)
+
+	if b.Secrets.Data != nil {
+		lr, err := b.reauth()
+		if err != nil {
+			log.Println(err)
+			b.reconcilePaused.Store(false)
+			return firstRun
+		}
+		b.lr = lr
+	}
+
+	log.Println("Syncing...")
+	if err := b.Sync(); err != nil {
+		log.Println(err)
+	}
+
+	if firstRun {
+		firstRun = false
+		done <- true
+	}
+	b.reconcilePaused.Store(false)
+
+	// Call the autoloader if it has been set
+	if b.autoload != nil {
+		*b.autoload <- true
+	}
+	return firstRun
 }
 
 // reauth re-authenticates using whichever credential path applies and returns a

@@ -135,74 +135,67 @@ func MasterPasswordKeyMac() ([]byte, []byte, error) {
 //
 // This key can be found in both the Profile field of the data file as well as
 // the LoginResponse.
+// decryptKey unwraps the vault's decryption key from keyCipher using the master
+// password. The stretched intermediate keys are discarded once the final key is
+// obtained.
+func (c *SecretCache) decryptKey(keyCipher types.CipherString, mpw []byte) ([]byte, error) {
+	switch keyCipher.Type {
+	case types.AesCbc256_B64:
+		return crypto.DecryptWith(keyCipher, mpw, nil)
+	case types.AesCbc256_HmacSha256_B64:
+		key, macKey, err := crypto.StretchKey(mpw)
+		if err != nil {
+			return nil, err
+		}
+		return crypto.DecryptWith(keyCipher, key, macKey)
+	default:
+		return nil, fmt.Errorf("unsupported key cipher type %q", keyCipher.Type)
+	}
+}
+
+// storeFinalKey seals the unwrapped key into the enclave, splitting a 64-byte
+// key into a 32-byte encryption key (enclave) and a 32-byte MAC key (c.macKey).
+func (c *SecretCache) storeFinalKey(finalKey []byte) error {
+	buf := memguard.NewBuffer(32)
+	switch len(finalKey) {
+	case 32:
+		buf.Move(finalKey)
+	case 64:
+		c.macKey = append([]byte{}, finalKey[32:64]...)
+		buf.Move(append([]byte{}, finalKey[:32]...))
+	default:
+		return fmt.Errorf("invalid key length: %d", len(finalKey))
+	}
+
+	enclave := buf.Seal()
+	if enclave == nil {
+		return fmt.Errorf("failed to create enclave for master password")
+	}
+	c.keyEnclave = enclave
+	return nil
+}
+
 func (c *SecretCache) Unlock(keyCipher types.CipherString) (err error) {
 	// only unlock if there is nothing in the enclave (first time)
 	if c.keyEnclave != nil {
 		return
 	}
 
-	var (
-		key, macKey, finalKey []byte
-		mpw                   []byte
-		scramble              bool
-	)
-
+	var mpw []byte
 	if mpw, err = MasterPassword(); err != nil {
 		return
 	}
+	defer memguard.ScrambleBytes(mpw)
 
-	switch keyCipher.Type {
-	case types.AesCbc256_B64:
-		if finalKey, err = crypto.DecryptWith(keyCipher, mpw, nil); err != nil {
-			scramble = true
-		}
-	case types.AesCbc256_HmacSha256_B64:
-		// We decrypt the decryption key from the synced data, using the key
-		// resulting from stretching masterKey. The keys are discarded once we
-		// obtain the final ones.
-		if key, macKey, err = crypto.StretchKey(mpw); err != nil {
-			scramble = true
-			break
-		}
-
-		if finalKey, err = crypto.DecryptWith(keyCipher, key, macKey); err != nil {
-			scramble = true
-		}
-	default:
-		err = fmt.Errorf("unsupported key cipher type %q", keyCipher.Type)
-		scramble = true
+	var finalKey []byte
+	if finalKey, err = c.decryptKey(keyCipher, mpw); err != nil {
+		return err
 	}
+	// The final key is copied into the enclave; scrub this copy so it can't be
+	// recovered from memory.
+	defer memguard.ScrambleBytes(finalKey)
 
-	var buf = memguard.NewBuffer(32)
-	if !scramble {
-		switch len(finalKey) {
-		case 32:
-			buf.Move(finalKey)
-		case 64:
-			c.macKey = []byte{}
-			c.macKey = append(c.macKey, finalKey[32:64]...)
-			var b []byte
-			b = append(b, finalKey[:32]...)
-			buf.Move(b)
-		default:
-			err = fmt.Errorf("invalid key length: %d", len(finalKey))
-		}
-
-		if err == nil {
-			enclave := buf.Seal()
-			if enclave == nil {
-				return fmt.Errorf("failed to create enclave for master password: %w", err)
-			}
-
-			c.keyEnclave = enclave
-		}
-	}
-
-	// This copy of the key is done with and to prevent it being recovered from
-	// memory it is scrambled to ensure it is not recoverable.
-	memguard.ScrambleBytes(finalKey)
-	memguard.ScrambleBytes(mpw)
-	return
+	return c.storeFinalKey(finalKey)
 }
 
 // Update the secret cache with the given data file.
