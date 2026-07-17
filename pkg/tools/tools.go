@@ -28,14 +28,14 @@ import (
 func ReadPassword(prompt string) ([]byte, error) {
 	line := liner.NewLiner()
 	line.SetCtrlCAborts(true)
-	defer line.Close()
+	defer func() { _ = line.Close() }()
 	var (
 		password string
 		err      error
 	)
 	if password, err = line.PasswordPrompt(prompt); err != nil {
 		if err == liner.ErrPromptAborted {
-			line.Close()
+			_ = line.Close()
 			os.Exit(0)
 		}
 		return nil, err
@@ -47,14 +47,14 @@ func ReadPassword(prompt string) ([]byte, error) {
 func ReadLine(prompt string) ([]byte, error) {
 	line := liner.NewLiner()
 	line.SetCtrlCAborts(true)
-	defer line.Close()
+	defer func() { _ = line.Close() }()
 	var (
 		password string
 		err      error
 	)
 	if password, err = line.Prompt(prompt); err != nil {
 		if err == liner.ErrPromptAborted {
-			line.Close()
+			_ = line.Close()
 			os.Exit(0)
 		}
 		return nil, err
@@ -145,7 +145,7 @@ func password(title, description, prompt string) ([]byte, error) {
 		}
 
 		if usePinentry {
-			defer client.Close()
+			defer func() { _ = client.Close() }()
 			password, _, err = client.GetPIN()
 			if pinentry.IsCancelled(err) {
 				return nil, fmt.Errorf("Cancelled")

@@ -38,7 +38,7 @@ func getSecretFromSecretsService(what string) (string, error) {
 	if service, err = gosecret.NewService(); err != nil {
 		return "", err
 	}
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	var unlockedItems []*gosecret.Item
 

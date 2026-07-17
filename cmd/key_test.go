@@ -69,7 +69,7 @@ func TestGenkeyCmd(t *testing.T) {
 				response map[string]string
 				buf      bytes.Buffer
 			)
-			defer w.Close()
+			defer func() { _ = w.Close() }()
 
 			log.SetOutput(&buf)
 
@@ -94,7 +94,7 @@ func TestGenkeyCmd(t *testing.T) {
 
 			os.Args = []string{"bwv", "key", "gen", "-a", "192.168.0.1"}
 			Execute()
-			w.Close()
+			_ = w.Close()
 
 			var stdoutbuf strings.Builder
 			_, err = io.Copy(&stdoutbuf, r)

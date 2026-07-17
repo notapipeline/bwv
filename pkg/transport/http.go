@@ -166,7 +166,7 @@ func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
 		return err
 	}
 
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if body, err = io.ReadAll(response.Body); err != nil {
 		return err
 	}

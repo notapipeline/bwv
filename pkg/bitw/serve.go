@@ -70,7 +70,7 @@ func (s *HttpServer) writeResponseError(w http.ResponseWriter, message string, c
 	}
 
 	w.WriteHeader(code)
-	fmt.Fprint(w, string(b))
+	_, _ = fmt.Fprint(w, string(b))
 }
 
 // IsSecure returns true if the server is configured to use TLS
@@ -336,7 +336,7 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, string(b))
+	_, _ = fmt.Fprint(w, string(b))
 }
 
 // revokeToken revokes a token sent via POST in the Authorization header
@@ -393,7 +393,7 @@ func (s *HttpServer) revokeToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, string(b))
+	_, _ = fmt.Fprint(w, string(b))
 }
 
 // storeToken stores one or more tokens for addresses sent via POST.
@@ -456,7 +456,7 @@ func (s *HttpServer) storeToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, string(b))
+	_, _ = fmt.Fprint(w, string(b))
 }
 
 // reload the config file
@@ -485,7 +485,7 @@ func (s *HttpServer) kdf(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "%s", kdf)
+	_, _ = fmt.Fprintf(w, "%s", kdf)
 }
 
 // ListenAndServe starts the HTTP server and listens for requests

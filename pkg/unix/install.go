@@ -69,18 +69,18 @@ func InstallService(serviceName string) error {
 
 	log.Printf("Creating service file %s\n", servicePath)
 	if file, err = os.Create(servicePath); err != nil {
-		return fmt.Errorf("Unable to create service file: %v", err)
+		return fmt.Errorf("unable to create service file: %v", err)
 	}
 
 	if _, err = file.WriteString(SYSTEMFILE); err != nil {
-		return fmt.Errorf("Unable to write service file: %v", err)
+		return fmt.Errorf("unable to write service file: %v", err)
 	}
 
 	if err = file.Sync(); err != nil {
-		return fmt.Errorf("Unable to sync service file: %v", err)
+		return fmt.Errorf("unable to sync service file: %v", err)
 	}
 	if err = file.Close(); err != nil {
-		return fmt.Errorf("Unable to close service file: %v", err)
+		return fmt.Errorf("unable to close service file: %v", err)
 	}
 
 	log.Printf("Enabling systemd user service '%s' and reloading daemon\n", serviceName)
@@ -88,12 +88,12 @@ func InstallService(serviceName string) error {
 	{
 		_, _, err = systemd.EnableUnitFilesContext(context.Background(), files, false, true)
 		if err != nil {
-			return fmt.Errorf("Failed to enable the %s service: %v", serviceName, err)
+			return fmt.Errorf("failed to enable the %s service: %v", serviceName, err)
 		}
 	}
 
 	if err = systemd.ReloadContext(context.Background()); err != nil {
-		return fmt.Errorf("Failed to reload the Daemon: %v", err)
+		return fmt.Errorf("failed to reload the Daemon: %v", err)
 	}
 
 	return nil
@@ -110,21 +110,21 @@ func RemoveService(serviceName string) error {
 	)
 	_, err = systemd.StopUnitContext(context.Background(), service, "replace", channel)
 	if err != nil {
-		return fmt.Errorf("Failed to stop %s service: %v", serviceName, err)
+		return fmt.Errorf("failed to stop %s service: %v", serviceName, err)
 	}
 	log.Println(<-channel)
 
 	var files = []string{service}
 	_, err = systemd.DisableUnitFilesContext(context.Background(), files, false)
 	if err != nil {
-		return fmt.Errorf("Failed to disable the %s service: %v", serviceName, err)
+		return fmt.Errorf("failed to disable the %s service: %v", serviceName, err)
 	}
 
 	if err = systemd.ReloadContext(context.Background()); err != nil {
-		return fmt.Errorf("Failed to reload the Daemon: %v", err)
+		return fmt.Errorf("failed to reload the Daemon: %v", err)
 	}
 	if err = os.Remove(servicePath); err != nil {
-		return fmt.Errorf("Unable to delete service file at %s. %v", servicePath, err)
+		return fmt.Errorf("unable to delete service file at %s. %v", servicePath, err)
 	}
 	return nil
 }

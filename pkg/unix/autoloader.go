@@ -262,7 +262,7 @@ func (a *Autoloader) addSSHKey(key, passphrase []byte, filename string) error {
 	if conn, err = net.Dial("unix", socket); err != nil {
 		return fmt.Errorf("failed to connect to ssh-agent: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client = agent.NewClient(conn)
 	if err := client.Add(agent.AddedKey{

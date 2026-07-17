@@ -60,10 +60,10 @@ server:
 		ConfigPath = getConfigPath
 		GetSecrets = tools.GetSecretsFromUserEnvOrStore
 		cache.Reset()
-		os.Unsetenv("BW_CLIENTSECRET")
-		os.Unsetenv("BW_PASSWORD")
-		os.Unsetenv("BW_CLIENTID")
-		os.Unsetenv("BW_EMAIL")
+		_ = os.Unsetenv("BW_CLIENTSECRET")
+		_ = os.Unsetenv("BW_PASSWORD")
+		_ = os.Unsetenv("BW_CLIENTID")
+		_ = os.Unsetenv("BW_EMAIL")
 
 	}
 }
@@ -205,8 +205,8 @@ func TestConfig_CheckApiKey(t *testing.T) {
 			key:      []byte("invalidkey"),
 			expected: false,
 			mocks: func() {
-				os.Setenv("BW_CLIENTSECRET", "abcdef123456")
-				os.Setenv("BW_PASSWORD", "abcdef123456")
+				_ = os.Setenv("BW_CLIENTSECRET", "abcdef123456")
+				_ = os.Setenv("BW_PASSWORD", "abcdef123456")
 			},
 		},
 		{
@@ -217,8 +217,8 @@ func TestConfig_CheckApiKey(t *testing.T) {
 			expectedLog: "[FATAL]",
 			mocks: func() {
 				exit = func(code int) {}
-				os.Setenv("BW_CLIENTSECRET", "abcdef123456")
-				os.Setenv("BW_PASSWORD", "somerandompassword")
+				_ = os.Setenv("BW_CLIENTSECRET", "abcdef123456")
+				_ = os.Setenv("BW_PASSWORD", "somerandompassword")
 			},
 		},
 		{

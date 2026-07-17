@@ -88,11 +88,11 @@ func (b *Bwv) ApiLogin(s map[string][]byte) (*types.LoginResponse, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("Could not login: %w", err)
+		return nil, fmt.Errorf("could not login: %w", err)
 	}
 
 	if b.Secrets, err = cache.Instance(s["BW_PASSWORD"], s["BW_EMAIL"], lr.KDFInfo); err != nil {
-		return nil, fmt.Errorf("Could not create secret cache: %w", err)
+		return nil, fmt.Errorf("could not create secret cache: %w", err)
 	}
 
 	return &lr, nil
@@ -170,11 +170,11 @@ func (b *Bwv) prelogin(password, email []byte) (hashed string, err error) {
 	if err = transport.DefaultHttpClient.Post(context.Background(), b.Endpoint.ApiServer+"/accounts/prelogin", &preLogin, preLoginRequest{
 		Email: email,
 	}); err != nil {
-		return "", fmt.Errorf("Could not retrieve pre-login data: %w", err)
+		return "", fmt.Errorf("could not retrieve pre-login data: %w", err)
 	}
 
 	if b.Secrets, err = cache.Instance(password, email, preLogin); err != nil {
-		return "", fmt.Errorf("Could not create secret cache: %w", err)
+		return "", fmt.Errorf("could not create secret cache: %w", err)
 	}
 	b.Secrets.KDF = preLogin
 	return b.Secrets.HashPassword(password), nil

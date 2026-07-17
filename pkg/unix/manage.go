@@ -35,7 +35,7 @@ func StartService(serviceName string) error {
 	log.Printf("Starting %s service\n", serviceName)
 	_, err = systemd.StartUnitContext(context.Background(), service, "replace", channel)
 	if err != nil {
-		return fmt.Errorf("Failed to start %s service: %v", serviceName, err)
+		return fmt.Errorf("failed to start %s service: %v", serviceName, err)
 	}
 
 	log.Println(<-channel)
@@ -52,7 +52,7 @@ func StopService(serviceName string) error {
 	log.Printf("Stopping %s service\n", serviceName)
 	_, err = systemd.StopUnitContext(context.Background(), service, "replace", channel)
 	if err != nil {
-		return fmt.Errorf("Failed to start %s service: %v", serviceName, err)
+		return fmt.Errorf("failed to start %s service: %v", serviceName, err)
 	}
 	log.Println(<-channel)
 	return nil
@@ -68,7 +68,7 @@ func ServiceStatus(serviceName string) (string, error) {
 	)
 
 	if statuses, err = systemd.ListUnitsByNamesContext(ctx, []string{service}); err != nil {
-		return "", fmt.Errorf("Failed to get service status for %s", serviceName)
+		return "", fmt.Errorf("failed to get service status for %s", serviceName)
 	}
 	return statuses[0].SubState, nil
 }
