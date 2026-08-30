@@ -21,6 +21,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/notapipeline/bwv/pkg/bwv"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
@@ -104,7 +105,16 @@ var genkeyCmd = &cobra.Command{
 		}
 
 		{
-			clientCmd.Token = getEncryptedToken()
+			var c *bwv.Client
+			if c, err = client(); err != nil {
+				fatal("%s", err)
+				return
+			}
+
+			if clientCmd.Token, err = c.Token(ctx); err != nil {
+				fatal("%s", err)
+				return
+			}
 			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		}
 
@@ -142,7 +152,16 @@ You must specify either an address or a cidr block. You cannot specify both.`,
 		}
 
 		{
-			clientCmd.Token = getEncryptedToken()
+			var c *bwv.Client
+			if c, err = client(); err != nil {
+				fatal("%s", err)
+				return
+			}
+
+			if clientCmd.Token, err = c.Token(ctx); err != nil {
+				fatal("%s", err)
+				return
+			}
 			ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		}
 

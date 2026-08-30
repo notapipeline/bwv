@@ -24,9 +24,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/notapipeline/bwv/pkg/bwv"
 	"github.com/notapipeline/bwv/pkg/cache"
 	"github.com/notapipeline/bwv/pkg/config"
-	"github.com/notapipeline/bwv/pkg/tools"
 	"github.com/notapipeline/bwv/pkg/transport"
 	"github.com/notapipeline/bwv/pkg/types"
 )
@@ -46,8 +46,16 @@ token: ocjJueD4tiXXdCNIDVhhiOyS9XOHxDXg
 		t.Fatal(err)
 	}
 
+	// Route the commands' client through whichever mock the test installs on
+	// transport.DefaultHttpClient, so they never reach the network.
+	onc := newBwvClient
+	newBwvClient = func(o bwv.Options) (*bwv.Client, error) {
+		o.HTTP = transport.DefaultHttpClient
+		return bwv.NewClient(o)
+	}
+
 	return func(t *testing.T) {
-		getSecretsFromUserEnvOrStore = tools.GetSecretsFromUserEnvOrStore
+		newBwvClient = onc
 		config.ConfigPath = ocp
 		cache.Reset()
 	}

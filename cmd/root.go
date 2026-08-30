@@ -18,13 +18,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/notapipeline/bwv/pkg/bitw"
-	"github.com/notapipeline/bwv/pkg/transport"
+	"github.com/notapipeline/bwv/pkg/bwv"
 	"github.com/notapipeline/bwv/pkg/types"
 	"github.com/spf13/cobra"
 )
@@ -58,10 +57,8 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 
 		// Send to server
 		var (
-			req         *http.Request
 			ctx         = context.Background()
 			err         error
-			address     = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
 			fields      = "fields=" + strings.Join(vaultItem.Fields, ",")
 			props       = "properties=" + strings.Join(vaultItem.Parameters, ",")
 			attachments strings.Builder
@@ -87,9 +84,6 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 			}
 		}
 
-		clientCmd.Token = getEncryptedToken()
-
-		ctx = context.WithValue(ctx, transport.AuthToken{}, clientCmd.Token)
 		var getProperties = make([]string, 0)
 		if attachments.String() != "attachments=" {
 			getProperties = append(getProperties, attachments.String())
@@ -109,14 +103,15 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 
 		var parameters = strings.Join(getProperties, "&")
 
-		if req, err = http.NewRequest("GET", address+"/"+vaultItem.Path+"?"+parameters, nil); err != nil {
-			fatal("unable to create request for %s: %q", address, err)
+		var c *bwv.Client
+		if c, err = client(); err != nil {
+			fatal("%s", err)
 			return nil
 		}
 
 		var r types.SecretResponse
-		if err = transport.DefaultHttpClient.DoWithBackoff(ctx, req, &r); err != nil {
-			fatal("unable to send request for %s: %q", address, err)
+		if r, err = c.Raw(ctx, vaultItem.Path, parameters); err != nil {
+			fatal("unable to read %q: %q", vaultItem.Path, err)
 		}
 
 		var (

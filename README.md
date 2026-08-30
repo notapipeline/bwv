@@ -353,3 +353,40 @@ $ curl -s -H "Authorization: Bearer TQ5d0IEyOEPAtgZmV76oOc0WqpU5VdDO" \
 Failure to provide a token, using anything other than `Bearer`, or using a token
 not assigned to the address or range you are accessing the API from, will result
 in a `403 Permission Denied` response.
+
+## Using bwv from another application
+
+`github.com/notapipeline/bwv/pkg/bwv` is a client for a running bwv server. It
+owns the handshake - reading the server's KDF parameters and encrypting the API
+token with a key derived from your master password - so an embedding
+application only has to ask for a path.
+
+```go
+import "github.com/notapipeline/bwv/pkg/bwv"
+
+c, err := bwv.NewClient(bwv.Options{})
+if err != nil {
+    return err
+}
+
+// whole items, decrypted
+items, err := c.Get(ctx, "choclab/customers/giantswarm")
+company := items[0].Identity["company"]
+
+// or only the values you want
+values, err := c.GetProperties(ctx, "example/test", "username", "password")
+fields, err := c.GetFields(ctx, "example/test", "unseal-1", "unseal-2")
+files, err := c.GetAttachments(ctx, "example/test", "id_rsa")
+```
+
+The zero `Options` talks to a server on `localhost:6277`, taking anything else
+it needs from `~/.config/bwv/client.yaml` and the credential store. Credentials
+are resolved on the first request, so constructing a client never blocks on the
+daemon being up. Set `Retry` if you want it to ride out a server that is still
+starting; by default a request is attempted once.
+
+`GetProperties`, `GetFields` and `GetAttachments` return `ErrNoSelection` rather
+than the whole item when none of the requested names exist on it, and
+`ErrMultipleItems` when the path matched more than one item - use `Get` for
+wildcards. `Raw` is available for the server's own response shapes, which is
+what the `bwv` command itself renders.

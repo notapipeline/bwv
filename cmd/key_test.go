@@ -76,6 +76,8 @@ func TestGenkeyCmd(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			defer setupSuite(t)(t)
+
 			transport.DefaultHttpClient = &transport.MockHttpClient{
 				Responses: test.responses,
 			}
@@ -193,6 +195,8 @@ func TestRevokeCmd(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			defer setupSuite(t)(t)
+
 			// Mock HTTP client
 			transport.DefaultHttpClient = &transport.MockHttpClient{
 				Responses: test.responses,

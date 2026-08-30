@@ -16,12 +16,12 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"runtime/debug"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,11 +29,7 @@ import (
 
 	"github.com/hokaccha/go-prettyjson"
 	"github.com/jedib0t/go-pretty/v6/table"
-	"github.com/notapipeline/bwv/pkg/bitw"
-	"github.com/notapipeline/bwv/pkg/config"
-	"github.com/notapipeline/bwv/pkg/crypto"
-	"github.com/notapipeline/bwv/pkg/tools"
-	"github.com/notapipeline/bwv/pkg/transport"
+	"github.com/notapipeline/bwv/pkg/bwv"
 	"github.com/notapipeline/bwv/pkg/types"
 )
 
@@ -46,49 +42,22 @@ var fatal func(format string, v ...any) = func(format string, v ...any) {
 	log.Fatalf(format, v...)
 }
 
-// getSecretsFromUserEnvOrStore is a wrapper around tools.GetSecretsFromUserEnvOrStore
-var getSecretsFromUserEnvOrStore func(v bool) map[string][]byte = tools.GetSecretsFromUserEnvOrStore
+// newBwvClient is indirected so tests can drive the commands without a server.
+var newBwvClient = bwv.NewClient
 
-// getKdf reads kdf info from the local bwv server for encrypting data sent to
-// the server
-func getKdf() (kdf types.KDFInfo) {
-	var ctx = context.Background()
-	var localAddress = fmt.Sprintf("https://%s:%d", clientCmd.Server, clientCmd.Port)
-	if err := transport.DefaultHttpClient.Get(ctx, localAddress+"/api/v1/kdf", &kdf); err != nil {
-		fatal("unable to get kdf info: %q", err)
-	}
-	return
-}
-
-// getEncryptedToken encrypts the token using the password and email address
-func getEncryptedToken() string {
-	var (
-		secrets = getSecretsFromUserEnvOrStore(false)
-		err     error
-		token   string
-		kdf     = getKdf()
-	)
-
-	if clientCmd.Token == "" {
-		if t, ok := secrets["BW_CLIENTSECRET"]; ok {
-			clientCmd.Token = string(t)
-		} else {
-			clientCmd.Token = string(secrets["BW_PASSWORD"])
-		}
-	}
-
-	if clientCmd.Token == "" {
-		if err = loadClientConfig(); err != nil {
-			return ""
-		}
-	}
-
-	token, err = crypto.Encrypt(secrets["BW_PASSWORD"], string(secrets["BW_EMAIL"]), clientCmd.Token, kdf)
-	if err != nil {
-		fatal("failed to encrypt token : %q", err)
-	}
-
-	return token
+// client returns a client for the bwv server described by the command flags.
+//
+// The retry budget is deliberately short: the shared transport retries for 15
+// minutes, which suits the server's own calls to Bitwarden but leaves someone
+// running `bwv secret/path` staring at a prompt when the daemon is down.
+func client() (*bwv.Client, error) {
+	return newBwvClient(bwv.Options{
+		Server:     clientCmd.Server,
+		Port:       clientCmd.Port,
+		Token:      clientCmd.Token,
+		SkipVerify: clientCmd.SkipVerify,
+		Retry:      30 * time.Second,
+	})
 }
 
 func printResponse(r types.SecretResponse) error {
@@ -229,35 +198,4 @@ func printJSON(r types.SecretResponse) error {
 	}
 	fmt.Println(string(b))
 	return nil
-}
-
-// loadClientConfig loads the client config from the config file
-func loadClientConfig() (err error) {
-	c := config.New()
-	if err = c.Load(config.ConfigModeClient); err != nil {
-		return err
-	}
-
-	if clientCmd.Token == "" {
-		clientCmd.Token = c.Token
-		if c.Token == "" {
-			fatal("no token specified")
-		}
-	}
-
-	if clientCmd.Server == "" {
-		clientCmd.Server = c.Address
-		if c.Address == "" {
-			clientCmd.Server = "localhost"
-		}
-	}
-
-	if clientCmd.Port == 0 {
-		clientCmd.Port = c.Port
-		if c.Port == 0 {
-			clientCmd.Port = bitw.DefaultPort
-		}
-	}
-
-	return
 }
