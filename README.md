@@ -155,6 +155,11 @@ end of the path.
 > Note:
 > Do not use filters with wildcards as this may give unexpected results.
 
+> Note:
+> If none of the requested properties or fields exist on the matched item, the
+> whole item is returned instead - attachments included. This is deliberate: a
+> request that matches nothing gives you everything rather than an empty object.
+
 If only a single property or field is being returned, this will always be
 identified as `value` in the resulting json object.
 
@@ -233,6 +238,25 @@ The attribute names are the lowercased Bitwarden identity fields:
 
 `username` resolves to the identity's username when the item has no login, so
 `?properties=username` works the same way for both types.
+
+### Notes
+
+Any item type can carry a note. It is returned as `notes`, and `-n`/`--notes`
+is shorthand for asking for that property.
+
+```
+$ bwv example/test -n
+{
+  "value": "unseal keys are in the safe"
+}
+```
+
+`--secure-notes` restricts matches to Secure Note items, which is what you want
+with a wildcard:
+
+```
+$ bwv 'choclab/*' --secure-notes
+```
 
 ### Whitelisting
 

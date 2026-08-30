@@ -48,6 +48,10 @@ type DecryptedCipher struct {
 	// it has one - not the secret itself.
 	Otp string `json:"totp,omitempty"`
 
+	// Notes is the free-text note attached to the item. Every cipher type can
+	// carry one; a secure note is simply an item whose content is only this.
+	Notes string `json:"notes,omitempty"`
+
 	// Identity holds the decrypted attributes of an identity cipher, keyed by
 	// the lowercase name they are queried under (firstname, postalcode, ...).
 	// Only attributes the vault actually holds a value for are present.
@@ -70,23 +74,17 @@ func NewDecryptedCipher(b *Bwv) *DecryptedCipher {
 // Get returns the value of the given field.
 func (d *DecryptedCipher) Get(what string) (value any) {
 	what = strings.ToLower(what)
+	if v, ok := d.meta(what); ok {
+		return v
+	}
+
 	switch what {
-	case "type":
-		return d.Type
-	case "id":
-		return d.ID
-	case "revisiondate":
-		return d.RevisionDate
-	case "name":
-		return d.Name
-	case "folderid":
-		return d.FolderID
-	case "organization":
-		return d.OrganizationID
 	case "password":
 		return d.Password
 	case "otp", "totp":
 		return d.Otp
+	case "notes", "note":
+		return d.Notes
 	case "username":
 		// An identity carries its own username; fall through to the identity
 		// attributes below when the cipher has no login.
@@ -99,6 +97,26 @@ func (d *DecryptedCipher) Get(what string) (value any) {
 		return v
 	}
 	return nil
+}
+
+// meta returns the cipher's own attributes: the ones that are not strings, and
+// so can never be shadowed by an identity attribute of the same name.
+func (d *DecryptedCipher) meta(what string) (any, bool) {
+	switch what {
+	case "type":
+		return d.Type, true
+	case "id":
+		return d.ID, true
+	case "revisiondate":
+		return d.RevisionDate, true
+	case "name":
+		return d.Name, true
+	case "folderid":
+		return d.FolderID, true
+	case "organization":
+		return d.OrganizationID, true
+	}
+	return nil, false
 }
 
 // identityFields pairs each attribute of an identity cipher with the name it is
@@ -193,6 +211,13 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 
 	if c.Identity != nil {
 		d.decryptIdentity(c)
+	}
+
+	if c.Notes != nil && !c.Notes.IsZero() {
+		var err error
+		if d.Notes, err = d.bwv.Secrets.DecryptCipherStr(*c.Notes, c.Key); err != nil {
+			log.Printf("[ERROR] cannot decrypt notes for cipher id=%s: %v", c.ID, err)
+		}
 	}
 
 	var wg sync.WaitGroup

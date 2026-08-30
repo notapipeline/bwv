@@ -50,6 +50,12 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 		if len(os.Args[1:]) == 0 {
 			return cmd.Help()
 		}
+		// --notes is a request for one more property; --secure-notes is a
+		// filter the server applies to the matched items.
+		if vaultItem.Notes {
+			vaultItem.Parameters = append(vaultItem.Parameters, "notes")
+		}
+
 		// Send to server
 		var (
 			req         *http.Request
@@ -95,10 +101,6 @@ on localhost:6277 and retrieve the secret at the specified path.`,
 
 		if props != "properties=" {
 			getProperties = append(getProperties, props)
-		}
-
-		if vaultItem.Notes {
-			getProperties = append(getProperties, "notes=true")
 		}
 
 		if vaultItem.SecureNotes {
@@ -171,7 +173,8 @@ func Execute() {
 				args = append(args, os.Args[i])
 				args = append(args, os.Args[i+1])
 				i += 2
-			case "--skip-verify", "--debug", "--quiet":
+			case "-n", "--notes", "--secure-notes",
+				"--skip-verify", "--debug", "--quiet":
 				args = append(args, os.Args[i])
 				i++
 			default:
@@ -204,4 +207,6 @@ func init() {
 	rootCmd.Flags().StringVarP(&vaultItem.Path, "path", "P", "", "Path to the vault item")
 	rootCmd.Flags().StringVarP(&clientCmd.Token, "token", "t", "", "Token for accessing the server")
 	rootCmd.Flags().StringVarP(&clientCmd.Output, "output", "o", "", "Output format (json, yaml, table, secret (default json))")
+	rootCmd.Flags().BoolVarP(&vaultItem.Notes, "notes", "n", false, "Retrieve the note attached to the vault item")
+	rootCmd.Flags().BoolVar(&vaultItem.SecureNotes, "secure-notes", false, "Restrict matches to Secure Note items")
 }

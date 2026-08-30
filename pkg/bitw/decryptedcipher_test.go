@@ -149,3 +149,63 @@ func TestDecryptLoginKeepsUsername(t *testing.T) {
 		t.Errorf("expected no identity attributes on a login cipher, got %+v", d.Identity)
 	}
 }
+
+func TestDecryptNotes(t *testing.T) {
+	b := newTestBwv(t)
+
+	notes := encrypt(t, b, "unseal keys are in the safe")
+	tests := []struct {
+		name  string
+		typ   types.SecretType
+		extra func(*types.Secret)
+	}{
+		{"secure note", types.CipherNote, func(s *types.Secret) {
+			s.SecureNote = &types.SecureNote{Type: 0}
+		}},
+		{"login", types.CipherLogin, func(s *types.Secret) {
+			s.Login = &types.Login{Username: encrypt(t, b, "user")}
+		}},
+		{"identity", types.CipherIdentity, func(s *types.Secret) {
+			s.Identity = &types.Identity{Company: encrypt(t, b, "Giant Swarm")}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			secret := types.Secret{
+				Type:  tt.typ,
+				ID:    uuid.MustParse("66666666-6666-6666-6666-666666666666"),
+				Notes: &notes,
+			}
+			tt.extra(&secret)
+
+			d := NewDecryptedCipher(b).Decrypt(secret, "item")
+			if d.Notes != "unseal keys are in the safe" {
+				t.Errorf("Notes = %q, want %q", d.Notes, "unseal keys are in the safe")
+			}
+			if got := d.Get("notes"); got != "unseal keys are in the safe" {
+				t.Errorf("Get(\"notes\") = %v, want the decrypted note", got)
+			}
+		})
+	}
+}
+
+// An item with no note must not report an empty one.
+func TestDecryptWithoutNotes(t *testing.T) {
+	b := newTestBwv(t)
+
+	d := NewDecryptedCipher(b).Decrypt(types.Secret{
+		Type: types.CipherLogin,
+		ID:   uuid.MustParse("77777777-7777-7777-7777-777777777777"),
+		Login: &types.Login{
+			Username: encrypt(t, b, "user"),
+		},
+	}, "test")
+
+	if d.Notes != "" {
+		t.Errorf("Notes = %q, want empty", d.Notes)
+	}
+	if got := d.Get("notes"); got != nil && got != "" {
+		t.Errorf("Get(\"notes\") = %v, want nothing", got)
+	}
+}

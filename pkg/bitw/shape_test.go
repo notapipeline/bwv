@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/notapipeline/bwv/pkg/types"
 )
 
 func TestShapeResponse(t *testing.T) {
@@ -81,6 +82,36 @@ func TestChunk(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := chunk(tt.in, tt.size); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("chunk(%v, %d) = %v, want %v", tt.in, tt.size, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilterSecureNotes(t *testing.T) {
+	note := DecryptedCipher{ID: uuid.MustParse("11111111-1111-1111-1111-111111111111"), Type: int(types.CipherNote)}
+	login := DecryptedCipher{ID: uuid.MustParse("22222222-2222-2222-2222-222222222222"), Type: int(types.CipherLogin)}
+	all := []DecryptedCipher{note, login}
+
+	tests := []struct {
+		name   string
+		params map[string][]string
+		want   int
+	}{
+		{"absent leaves everything", map[string][]string{}, 2},
+		{"securenotes=true keeps only notes", map[string][]string{"securenotes": {"true"}}, 1},
+		{"bare securenotes keeps only notes", map[string][]string{"securenotes": {""}}, 1},
+		{"securenotes=false leaves everything", map[string][]string{"securenotes": {"false"}}, 2},
+		{"garbage is not true", map[string][]string{"securenotes": {"banana"}}, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterSecureNotes(all, tt.params)
+			if len(got) != tt.want {
+				t.Fatalf("filterSecureNotes() kept %d, want %d", len(got), tt.want)
+			}
+			if tt.want == 1 && got[0].Type != int(types.CipherNote) {
+				t.Errorf("kept a %d, want a secure note", got[0].Type)
 			}
 		})
 	}

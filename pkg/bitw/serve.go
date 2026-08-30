@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/notapipeline/bwv/pkg/cache"
@@ -210,6 +211,40 @@ func collapse(values map[string]any, n int) any {
 	return values
 }
 
+// boolParam reports whether a query parameter is set and truthy. A bare
+// parameter with no value (?securenotes) counts as true.
+func boolParam(params map[string][]string, key string) bool {
+	v, ok := params[key]
+	if !ok {
+		return false
+	}
+
+	if len(v) == 0 || v[0] == "" {
+		return true
+	}
+
+	b, err := strconv.ParseBool(v[0])
+	return err == nil && b
+}
+
+// filterSecureNotes reduces ciphers to Bitwarden secure notes when the
+// securenotes parameter is set. Bitwarden keeps a secure note's content in the
+// same notes field every other cipher type carries, so this is a filter on the
+// item type, not a different field.
+func filterSecureNotes(ciphers []DecryptedCipher, params map[string][]string) []DecryptedCipher {
+	if !boolParam(params, "securenotes") {
+		return ciphers
+	}
+
+	var filtered = make([]DecryptedCipher, 0, len(ciphers))
+	for _, c := range ciphers {
+		if c.Type == int(types.CipherNote) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
+
 // checkWhiteList returns true if the given address is in the whitelist
 func (s *HttpServer) checkWhiteList(w http.ResponseWriter, addr string) bool {
 	if tools.IsMachineNetwork(addr) {
@@ -326,6 +361,11 @@ func (s *HttpServer) getPath(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[GET] %s %+v from %s\n", path, r.URL.Query(), addr)
 	if ciphers, ok = s.Bwv.Get(path); !ok {
 		s.writeResponseError(w, fmt.Sprintf("Path '%s' not found", path), http.StatusNotFound, nil)
+		return
+	}
+
+	if ciphers = filterSecureNotes(ciphers, params); len(ciphers) == 0 {
+		s.writeResponseError(w, fmt.Sprintf("No secure notes found at path '%s'", path), http.StatusNotFound, nil)
 		return
 	}
 
