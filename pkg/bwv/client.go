@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -272,7 +273,7 @@ func (c *Client) values(ctx context.Context, path, kind string, names []string) 
 		return nil, err
 	}
 
-	if !contains(names, "name") {
+	if !slices.Contains(names, "name") {
 		delete(values, "name")
 	}
 
@@ -358,13 +359,4 @@ func remarshal(src, dst any) error {
 		return err
 	}
 	return json.Unmarshal(b, dst)
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
