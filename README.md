@@ -192,6 +192,48 @@ $ bwv 'example/test?properties=username,password&fields=unseal-1,unseal-2'
 }
 ```
 
+### Identities
+
+Identity items are returned with their populated attributes under `identity`,
+and every attribute is addressable as a property.
+
+```
+$ bwv Me
+[
+  {
+    "id": "33333333-3333-3333-3333-333333333333",
+    "identity": {
+      "country": "Spain",
+      "email": "me@example.com",
+      "firstname": "Martin",
+      "lastname": "Proffitt",
+      "passportnumber": "123456789",
+      "postalcode": "39687",
+      "title": "Mr",
+      "username": "notapipeline"
+    },
+    "name": "Me",
+    "revision_date": "2025-08-30T09:11:04.1234567Z",
+    "type": 3
+  }
+]
+
+$ bwv 'Me?properties=firstname,lastname'
+{
+  "firstname": "Martin",
+  "lastname": "Proffitt"
+}
+```
+
+The attribute names are the lowercased Bitwarden identity fields:
+
+`title`, `firstname`, `middlename`, `lastname`, `username`, `company`, `ssn`,
+`passportnumber`, `licensenumber`, `email`, `phone`, `address1`, `address2`,
+`address3`, `city`, `state`, `postalcode`, `country`.
+
+`username` resolves to the identity's username when the item has no login, so
+`?properties=username` works the same way for both types.
+
 ### Whitelisting
 
 > Localhost and the machine network is always whitelisted. This is done by
@@ -271,7 +313,8 @@ The API for this application is simple.
   not need to access this endpoint.
 - `/path/to/credential` get the full contents at `path/to/credential`.
 - `/path/?property=username[,password]` A top level attribute from the
-  credential such as username or password.
+  credential such as username or password. For identity items this is any of
+  the identity attributes (`firstname`, `postalcode`, ...).
 - `/path/?field=my-custom-field[,another-field]` Fields are custom attributes
   set on the credential.
 

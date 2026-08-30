@@ -48,6 +48,11 @@ type DecryptedCipher struct {
 	// it has one - not the secret itself.
 	Otp string `json:"totp,omitempty"`
 
+	// Identity holds the decrypted attributes of an identity cipher, keyed by
+	// the lowercase name they are queried under (firstname, postalcode, ...).
+	// Only attributes the vault actually holds a value for are present.
+	Identity map[string]string `json:"identity,omitempty"`
+
 	// attachments will be sent b64encoded
 	Attachments map[string]string `json:"attachments"`
 
@@ -64,7 +69,8 @@ func NewDecryptedCipher(b *Bwv) *DecryptedCipher {
 
 // Get returns the value of the given field.
 func (d *DecryptedCipher) Get(what string) (value any) {
-	switch strings.ToLower(what) {
+	what = strings.ToLower(what)
+	switch what {
 	case "type":
 		return d.Type
 	case "id":
@@ -77,14 +83,93 @@ func (d *DecryptedCipher) Get(what string) (value any) {
 		return d.FolderID
 	case "organization":
 		return d.OrganizationID
-	case "username":
-		return d.Username
 	case "password":
 		return d.Password
 	case "otp", "totp":
 		return d.Otp
+	case "username":
+		// An identity carries its own username; fall through to the identity
+		// attributes below when the cipher has no login.
+		if d.Username != "" {
+			return d.Username
+		}
+	}
+
+	if v, ok := d.Identity[what]; ok {
+		return v
 	}
 	return nil
+}
+
+// identityFields pairs each attribute of an identity cipher with the name it is
+// queried and rendered under. Bitwarden's identity schema is fixed, so this is
+// all of it.
+func identityFields(i *types.Identity) map[string]types.CipherString {
+	return map[string]types.CipherString{
+		"title":          i.Title,
+		"firstname":      i.FirstName,
+		"middlename":     i.MiddleName,
+		"lastname":       i.LastName,
+		"username":       i.Username,
+		"company":        i.Company,
+		"ssn":            i.SSN,
+		"passportnumber": i.PassportNumber,
+		"licensenumber":  i.LicenseNumber,
+		"email":          i.Email,
+		"phone":          i.Phone,
+		"address1":       i.Address1,
+		"address2":       i.Address2,
+		"address3":       i.Address3,
+		"city":           i.City,
+		"state":          i.State,
+		"postalcode":     i.PostalCode,
+		"country":        i.Country,
+	}
+}
+
+// decryptIdentity decrypts every populated attribute of an identity cipher.
+func (d *DecryptedCipher) decryptIdentity(c types.Secret) {
+	d.Identity = make(map[string]string)
+	for name, cs := range identityFields(c.Identity) {
+		if cs.IsZero() {
+			continue
+		}
+
+		value, err := d.bwv.Secrets.DecryptCipherStr(cs, c.Key)
+		if err != nil {
+			log.Printf("[ERROR] cannot decrypt identity %s for cipher id=%s: %v", name, c.ID, err)
+			continue
+		}
+		d.Identity[name] = value
+	}
+}
+
+// decryptLogin decrypts the credentials of a login cipher, generating the
+// current TOTP code when the login carries a secret.
+func (d *DecryptedCipher) decryptLogin(c types.Secret) {
+	var err error
+	if d.Username, err = d.bwv.Secrets.DecryptCipherStr(c.Login.Username, c.Key); err != nil {
+		log.Printf("[ERROR] cannot decrypt username for cipher id=%s: %v", c.ID, err)
+	}
+
+	if d.Password, err = d.bwv.Secrets.DecryptCipherStr(c.Login.Password, c.Key); err != nil {
+		log.Printf("[ERROR] cannot decrypt password for cipher id=%s: %v", c.ID, err)
+	}
+
+	if c.Login.Totp.IsZero() {
+		return
+	}
+
+	var secret string
+	if secret, err = d.bwv.Secrets.DecryptCipherStr(c.Login.Totp, c.Key); err != nil {
+		log.Printf("[ERROR] cannot decrypt TOTP secret for cipher id=%s: %v", c.ID, err)
+		return
+	}
+
+	if d.Otp, err = totpCode(secret, time.Now()); err != nil {
+		log.Printf("[ERROR] cannot generate TOTP for cipher id=%s: %v", c.ID, err)
+		d.Otp = ""
+	}
 }
 
 // GetAttachment returns the attachment with the given name.
@@ -103,17 +188,11 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 	d.Attachments = make(map[string]string)
 
 	if c.Login != nil {
-		d.Username, _ = d.bwv.Secrets.DecryptCipherStr(c.Login.Username, c.Key)
-		d.Password, _ = d.bwv.Secrets.DecryptCipherStr(c.Login.Password, c.Key)
-		if !c.Login.Totp.IsZero() {
-			secret, err := d.bwv.Secrets.DecryptCipherStr(c.Login.Totp, c.Key)
-			if err != nil {
-				log.Printf("[ERROR] cannot decrypt TOTP secret for cipher id=%s: %v", c.ID, err)
-			} else if d.Otp, err = totpCode(secret, time.Now()); err != nil {
-				log.Printf("[ERROR] cannot generate TOTP for cipher id=%s: %v", c.ID, err)
-				d.Otp = ""
-			}
-		}
+		d.decryptLogin(c)
+	}
+
+	if c.Identity != nil {
+		d.decryptIdentity(c)
 	}
 
 	var wg sync.WaitGroup
@@ -121,11 +200,7 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 		wg.Add(1)
 		go func(f types.Field) {
 			defer wg.Done()
-			name, _ := d.bwv.Secrets.DecryptCipherStr(f.Name, c.Key)
-			value, _ := d.bwv.Secrets.DecryptCipherStr(f.Value, c.Key)
-			fieldsMutex.Lock()
-			d.Fields[name] = value
-			fieldsMutex.Unlock()
+			d.decryptField(c, f, &fieldsMutex)
 		}(f)
 	}
 
@@ -133,39 +208,70 @@ func (d *DecryptedCipher) Decrypt(c types.Secret, name string) *DecryptedCipher 
 		wg.Add(1)
 		go func(a types.Attachment) {
 			defer wg.Done()
-			name, _ := d.bwv.Secrets.DecryptCipherStr(*a.FileName, c.Key)
-			var (
-				size       int
-				err        error
-				value      []byte
-				attachment *types.Attachment
-			)
-
-			// Although the attachment type is already stored in the cipher
-			// this is not necessarily the correct location for the attachment.
-			//
-			// the real attachment needs to be queriied seperately
-			if attachment, err = d.GetAttachmentLocation(c.ID.String(), a); err != nil {
-				log.Println(err)
-				return
-			}
-
-			if size, err = strconv.Atoi(attachment.Size); err != nil {
-				log.Println(err)
-				return
-			}
-
-			if value, err = d.DecryptUrl(attachment, size, c.Key); err != nil {
-				log.Println(err)
-				return
-			}
-			attachmentsMutex.Lock()
-			d.Attachments[name] = base64.StdEncoding.EncodeToString(value)
-			attachmentsMutex.Unlock()
+			d.decryptAttachment(c, a, &attachmentsMutex)
 		}(a)
 	}
 	wg.Wait()
 	return d
+}
+
+// decryptField decrypts one custom field and records it against its decrypted
+// name.
+func (d *DecryptedCipher) decryptField(c types.Secret, f types.Field, mu *sync.Mutex) {
+	name, err := d.bwv.Secrets.DecryptCipherStr(f.Name, c.Key)
+	if err != nil {
+		log.Printf("[ERROR] cannot decrypt field name for cipher id=%s: %v", c.ID, err)
+		return
+	}
+
+	value, err := d.bwv.Secrets.DecryptCipherStr(f.Value, c.Key)
+	if err != nil {
+		log.Printf("[ERROR] cannot decrypt field %q for cipher id=%s: %v", name, c.ID, err)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	d.Fields[name] = value
+}
+
+// decryptAttachment downloads and decrypts one attachment, recording it
+// b64encoded against its decrypted filename.
+func (d *DecryptedCipher) decryptAttachment(c types.Secret, a types.Attachment, mu *sync.Mutex) {
+	var (
+		size       int
+		value      []byte
+		attachment *types.Attachment
+	)
+
+	name, err := d.bwv.Secrets.DecryptCipherStr(*a.FileName, c.Key)
+	if err != nil {
+		log.Printf("[ERROR] cannot decrypt attachment name for cipher id=%s: %v", c.ID, err)
+		return
+	}
+
+	// Although the attachment type is already stored in the cipher
+	// this is not necessarily the correct location for the attachment.
+	//
+	// the real attachment needs to be queriied seperately
+	if attachment, err = d.GetAttachmentLocation(c.ID.String(), a); err != nil {
+		log.Println(err)
+		return
+	}
+
+	if size, err = strconv.Atoi(attachment.Size); err != nil {
+		log.Println(err)
+		return
+	}
+
+	if value, err = d.DecryptUrl(attachment, size, c.Key); err != nil {
+		log.Println(err)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	d.Attachments[name] = base64.StdEncoding.EncodeToString(value)
 }
 
 // GetAttachmentLocation queries the API to get the real location of the attachment.
