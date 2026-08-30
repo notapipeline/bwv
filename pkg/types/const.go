@@ -31,12 +31,20 @@ const (
 	KDFTypeArgon2id KDFType = 1
 )
 
+// Cipher types, in the order Bitwarden numbers them. Taken from
+// libs/common/src/vault/enums/cipher-type.ts - Card, CipherNote and Identity
+// were previously transposed here, so a type filter on any of the three matched
+// the wrong items.
 const (
 	_ SecretType = iota
 	CipherLogin
+	CipherNote
 	CipherCard
 	CipherIdentity
-	CipherNote
+	CipherSshKey
+	CipherBankAccount
+	CipherDriversLicense
+	CipherPassport
 )
 
 const (
