@@ -22,6 +22,7 @@ import (
 	"log"
 	"math/rand"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -442,8 +443,21 @@ func chunk[T any](slice []T, size int) [][]T {
 	return chunks
 }
 
+// normalizeFolder strips the separators Bitwarden tolerates around a folder
+// name. Folder names are stored as client-encrypted blobs, so nothing is
+// normalised on save: the official clients strip them only when building the
+// display tree, with `name.replace(/^\/+|\/+$/g, "")` in
+// libs/vault/src/services/vault-filter.service.ts. This mirrors that, so a
+// folder saved as "choclab/customers/" resolves the same as
+// "choclab/customers".
+func normalizeFolder(name string) string {
+	return strings.Trim(name, "/")
+}
+
 // GetFolder returns the uuid of the folder that matches the path
 func (b *Bwv) getFolder(path string) uuid.UUID {
+	path = normalizeFolder(path)
+
 	var folders = chunk(b.Secrets.Data.Sync.Folders, CHUNKSIZE)
 	var uuidchan = make(chan uuid.UUID, 1)
 
@@ -457,7 +471,7 @@ func (b *Bwv) getFolder(path string) uuid.UUID {
 				if err != nil {
 					log.Println(err)
 				}
-				if err == nil && name == path {
+				if err == nil && normalizeFolder(name) == path {
 					uuidchan <- item.ID
 					break
 				}
