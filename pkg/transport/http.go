@@ -115,12 +115,16 @@ func (c *client) Get(ctx context.Context, urlstr string, recv any) error {
 // If the request is >= 400 and < 429, the request will be retried but instead
 // cancelled and the underlying error will instead be returned.
 func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv any) error {
+	if c.maxElapsed <= 0 {
+		return c.Do(ctx, req, recv)
+	}
+
 	var (
 		initialInterval     = 500 * time.Millisecond
 		randomizationFactor = 0.1
 		multiplier          = 2.0
 		maxInterval         = 5 * time.Second
-		maxElapsedTime      = 15 * time.Minute
+		maxElapsedTime      = c.maxElapsed
 	)
 	exp := backoff.NewExponentialBackOff()
 	exp.InitialInterval = initialInterval
@@ -138,7 +142,9 @@ func (c *client) DoWithBackoff(ctx context.Context, req *http.Request, recv any)
 		log.Printf("Retrying in %s after error: %v", d, err)
 	}
 
-	return backoff.RetryNotifyWithTimer(f, exp, notify, nil)
+	// WithContext so a cancelled or expired request stops retrying instead of
+	// sitting out the whole budget.
+	return backoff.RetryNotifyWithTimer(f, backoff.WithContext(exp, ctx), notify, nil)
 }
 
 // Do sends the given request and decodes the response into the given recv
@@ -184,6 +190,7 @@ func statusError(statusCode int, body []byte) error {
 }
 
 func (c *client) Do(ctx context.Context, req *http.Request, recv any) error {
+	req = req.WithContext(ctx)
 	if token, ok := ctx.Value(AuthToken{}).(string); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

@@ -17,6 +17,7 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"time"
 )
@@ -29,12 +30,32 @@ type HttpClient interface {
 
 type client struct {
 	*http.Client
+
+	// maxElapsed bounds how long DoWithBackoff keeps retrying. Zero or less
+	// attempts the request exactly once.
+	maxElapsed time.Duration
 }
 
 var c client = client{
-	&http.Client{
+	Client: &http.Client{
 		Timeout: 10 * time.Second,
 	},
+	maxElapsed: 15 * time.Minute,
 }
 
 var DefaultHttpClient HttpClient = &c
+
+// NewHttpClient returns an HttpClient with its own TLS settings and retry
+// budget, for callers that cannot use the shared one. A maxElapsed of zero
+// attempts each request exactly once: the shared client's 15 minute budget
+// suits the Bitwarden API, but it is far too long to make an embedding
+// application wait on a local daemon that is not listening.
+func NewHttpClient(tlsConfig *tls.Config, timeout, maxElapsed time.Duration) HttpClient {
+	return &client{
+		Client: &http.Client{
+			Timeout:   timeout,
+			Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		},
+		maxElapsed: maxElapsed,
+	}
+}
