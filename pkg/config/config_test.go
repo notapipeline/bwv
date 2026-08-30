@@ -333,3 +333,21 @@ token: ""
 		t.Error(diff.Diff(string(expectedData), string(data)))
 	}
 }
+
+// loadYaml swallows a missing config file: defaults and the credential store
+// cover everything in it. It used to return the stat error through the named
+// return, which made every caller treat "no config file" as fatal.
+func TestLoadWithoutConfigFile(t *testing.T) {
+	ocp := ConfigPath
+	defer func() { ConfigPath = ocp }()
+
+	dir := t.TempDir()
+	ConfigPath = func(m ConfigMode) string {
+		return filepath.Join(dir, "does-not-exist.yaml")
+	}
+
+	c := New()
+	if err := c.Load(ConfigModeClient); err != nil {
+		t.Fatalf("Load() with no config file = %v, want nil", err)
+	}
+}

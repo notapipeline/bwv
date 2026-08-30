@@ -86,9 +86,14 @@ func TestHttpServerReload(t *testing.T) {
 			expectedBody:  `{"message":"an internal server error has occurred - please try again later"}`,
 			expectedError: nil,
 			mocks: func() {
-				// Mock the config
+				// A malformed config file, not a missing one: a missing config
+				// is normal and loads the defaults.
+				broken := filepath.Join(os.TempDir(), "bwv-broken-config.yaml")
+				if err := os.WriteFile(broken, []byte("\tnot: [valid\n"), 0600); err != nil {
+					panic(err)
+				}
 				config.ConfigPath = func(m config.ConfigMode) string {
-					return "/tmp/fail.yaml"
+					return broken
 				}
 			},
 		},

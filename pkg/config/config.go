@@ -84,8 +84,15 @@ func (c *Config) loadYaml(m ConfigMode) (err error) {
 		yamlFile []byte
 	)
 
-	if _, err = os.Stat(cp); errors.Is(err, os.ErrNotExist) {
-		return
+	if _, err = os.Stat(cp); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// No config file is normal - defaults, flags and the credential
+			// store cover everything in it. The bare `return` here used to hand
+			// back the stat error it meant to swallow, because err is a named
+			// return.
+			return nil
+		}
+		return err
 	}
 	if yamlFile, err = os.ReadFile(cp); err != nil {
 		return
